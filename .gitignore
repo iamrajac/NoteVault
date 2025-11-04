@@ -1,0 +1,124 @@
+# === OS ===
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Icon\r
+Desktop.ini
+
+# === IDEs / editors ===
+.vscode/
+.idea/
+*.iml
+*.iws
+*.ipr
+*.class
+/.settings/
+.project
+.classpath
+
+# === Java / Maven ===
+# Compiled class files
+**/target/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+*.car
+
+# Maven
+log/
+.mvn/
+!/.mvn/wrapper/maven-wrapper.jar
+
+# Spring Boot
+spring-boot-devtools.properties
+
+# Eclipse specific
+*.pydevproject
+
+# === Logs ===
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# === Node / frontend ===
+node_modules/
+npm-debug.log
+yarn-error.log
+dist/
+build/
+coverage/
+/.parcel-cache/
+/.next/
+/.nuxt/
+
+# === Env files ===
+.env
+.env.*.local
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+# === Frontend (create-react-app) ===
+# Local env files
+.env.local
+
+# === Misc / generated ===
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+
+# Lockfiles (do NOT ignore package-lock.json or yarn.lock unless you intentionally want to)
+# If you do want to ignore lockfiles, uncomment the following lines
+# package-lock.json
+# yarn.lock
+
+# Binary and executables
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+
+# JetBrains
+.idea/
+*.iml
+out/
+
+# VS Code
+.vscode/
+.history/
+
+# JAR produced by build
+*.jar
+
+# Maven target directories (catch-all)
+**/target/
+
+# Ignore the IDE workspace for remote containers
+.devcontainer/
+
+# If you have a local settings file for backend/frontend
+/notesvault-backend/src/main/resources/application.properties.local
+
+# End of file
