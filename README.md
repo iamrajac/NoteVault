@@ -1,4 +1,4 @@
-# NoteVault – Workspace Notes & Milestones
+# NoteVault – Workspace Notes & Milestone
 
 A collaborative workspace management system for managing projects, milestones, tasks, and notes with role-based access control.
 
