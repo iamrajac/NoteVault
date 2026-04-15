@@ -1,0 +1,84 @@
+0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17
+Task ID,Task Name,Bucket Name,Progress,Priority,Assigned To,Created By,Created Date,Start date,Due date,Is Recurring,Late,Completed Date,Completed By,Completed Checklist Items,Checklist Items,Labels,Description
+4nLEoqnCG0WBRsF2ipcgoMkABEgG,User Story 2 - Real-Time Collaborative Note Editing,Awaiting Review (Tasks/Spikes),Completed,Urgent,SUHAS  THAMMYSETTY  (RA2311003011329),SUHAS  THAMMYSETTY  (RA2311003011329),03/10/2026,03/11/2026,03/18/2026,false,false,03/25/2026,SUHAS  THAMMYSETTY  (RA2311003011329),3/3,Edits from different users are merged without conflicts or overwriting;Implement real-time synchronization for note changes;Add note version history,User Story;Functional;Non Functional;Sprint 1;Must have,"Priority: Urgent
+Description:
+Multiple users can edit the same note at the same time, with changes appearing instantly for everyone. The system ensures no data is lost and keeps track of all edits.
+Acceptance Criteria:
+Changes made by one user are instantly visible to all users
+Edits from different users are merged without conflicts or overwriting
+Version history is maintained for each note with rollback support
+Estimation: Medium (7 days)"
+8NYjXPmmDUObF1u3TgeYi8kAIToN,User Story 1 -User Authentication & Workspace Access,Awaiting Review (Tasks/Spikes),Completed,Urgent,SUHAS  THAMMYSETTY  (RA2311003011329),SUHAS  THAMMYSETTY  (RA2311003011329),03/10/2026,03/07/2026,03/13/2026,false,false,03/25/2026,SUHAS  THAMMYSETTY  (RA2311003011329),3/3,"Set up role management: admin, user, guest;Make workspace screen after login;Implement email/password registration and login",User Story;Functional;Sprint 1;Must have,"Priority: Urgent
+Description:
+Users should be able to sign up, log in securely, and access their workspaces. Each user will have a role (admin, user, or guest) that controls their permissions.
+Acceptance Criteria:
+Users can register and log in using email and password
+Role-based access is implemented (admin, user, guest)
+Users can select and switch between workspaces after logging in
+Estimation: Medium (5 days)"
+9x2sCEmtrUGRuRuOTBd0X8kAL3q6,User Story 6 - Workspace Milestone Tracking,Sprint Backlog (In Progress),In progress,Medium,SUHAS  THAMMYSETTY  (RA2311003011329),SUHAS  THAMMYSETTY  (RA2311003011329),03/10/2026,,,false,false,,,2/4,"Link tasks and notes to milestones;Show milestone progress in dashboard;Create milestones with name, deadline, description;Allow milestone edits and history tracking",User Story;Functional;Sprint 2;Should have,"Priority: Medium
+Description:
+Admins can create milestones for the workspace, link them with tasks and notes, and track overall progress through a dashboard.
+Acceptance Criteria:
+Admins can create and manage milestones with name, deadline, and description
+Tasks and notes can be linked to specific milestones
+Dashboard shows milestone progress and upcoming deadlines
+Team members are notified when milestones are completed or delayed
+Estimation: Medium (3 days)"
+BaOEW_0opkKIUsFrvvzo4skADGR8,User Story 10 - Note Approval Workflow,Product Backlog (User Stories),Not started,Medium,SUHAS  THAMMYSETTY  (RA2311003011329),SUHAS  THAMMYSETTY  (RA2311003011329),03/10/2026,03/07/2026,03/07/2026,false,true,,,0/3,"Approvers can approve/reject, add comments;Let users flag notes for approval;Record version history for rejected notes",User Story;Functional;Sprint 2;Should have,"Priority: Medium
+Description:
+Important notes go through an approval process before being shared with everyone. Users can request approval, and approvers can review, accept, or reject notes.
+Acceptance Criteria:
+Users can mark notes for approval
+Approvers receive notifications and can approve or reject notes
+Rejected notes keep their version history for edits
+Approved notes become visible to all workspace members
+Estimation: Medium (4 days)"
+FWOs-N4KZ0G4zmTHV9kTvskAKRF6,User Story 4 - Customizable Workspace Dashboards,Awaiting Review (Tasks/Spikes),Completed,Important,SUHAS  THAMMYSETTY  (RA2311003011329),SUHAS  THAMMYSETTY  (RA2311003011329),03/10/2026,03/11/2026,03/15/2026,false,false,03/25/2026,SUHAS  THAMMYSETTY  (RA2311003011329),2/2,Add widgets for workspace stats and shortcuts;Persist user dashboard settings,User Story;Functional;Sprint 1;Should have,"Priority: Important
+Description:
+Each workspace has a dashboard that shows useful information like recent notes, active users, and workspace stats. Users can customize the layout and choose which widgets to display.
+Acceptance Criteria:
+Dashboard includes widgets for activity, stats, and shortcuts
+Recent notes and users are shown
+Estimation: Medium (4 days)"
+JwZCQ5uEI0G6XMeVjKsNRskAIH6_,"User Story 3 - Workspace Management (Create, Invite, Settings)",Awaiting Review (Tasks/Spikes),Completed,Important,SUHAS  THAMMYSETTY  (RA2311003011329),SUHAS  THAMMYSETTY  (RA2311003011329),03/10/2026,03/10/2026,03/14/2026,false,false,03/25/2026,SUHAS  THAMMYSETTY  (RA2311003011329),3/3,"Grant and update workspace permissions;Send invitations to collaborators through invite link;Allow workspace creation, renaming",User Story;Functional;Sprint 1;Must have,"Priority: Important
+Description:
+Users can manage their workspaces by creating, renaming, or deleting them. They can invite others to collaborate, customize the workspace appearance, and control permissions.
+Acceptance Criteria:
+Users can create, rename, and delete workspaces
+Users can invite others via email and assign roles/permissions
+Workspace avatar and color/theme can be customized
+Estimation: Medium (4 days)"
+q1aqZzaCKE-yJUjAdSvpFckAM56X,User Story 7 - Workspace Changelog & Annotated Release Notes,Sprint Backlog (In Progress),Not started,Important,SUHAS  THAMMYSETTY  (RA2311003011329),SUHAS  THAMMYSETTY  (RA2311003011329),03/10/2026,03/27/2026,03/30/2026,false,true,,,0/3,"Allow manual annotation/commenting for changelog entries;Log major workspace actions (note, task, milestone changes); Export changelog (PDF, CSV, if needed)",User Story;Functional;Sprint 2;Should have,"Priority: Important
+Description:
+The workspace keeps a record of important activities and updates. Admins can add notes for clarity, and users can view or filter changes easily.
+Acceptance Criteria:
+Changelog is automatically updated for key actions (note edits, task updates, milestone changes)
+Admins can add notes or descriptions to changelog entries
+Users can search and filter the changelog by date, action, or user
+Users receive notifications for important updates if subscribed
+Estimation: Medium (3 days)"
+w-N9DuuUe0WqIPSwCKJvgskACrFE,User Story 8 - Intelligent Note Tagging & Search,Product Backlog (User Stories),Not started,Medium,SUHAS  THAMMYSETTY  (RA2311003011329),SUHAS  THAMMYSETTY  (RA2311003011329),03/10/2026,03/28/2026,03/31/2026,false,true,,,0/2,Search/filter notes by tags/topics;Allow manual tag addition/editing,User Story;Functional;Non Functional;Sprint 2;Should have,"Priority: Medium
+Description:
+Notes are automatically tagged based on their content, making it easier for users to organize and find information. Users can also manage tags and quickly search notes by topics.
+Acceptance Criteria:
+Notes are automatically tagged when saved based on content
+Users can manually add, edit, or remove tags
+Users can search and filter notes using tags or topics
+Estimation: Medium (3 days)"
+xNSwviO9L0eJ9VCZ654s0ckAEhCz,User Story 5 - Workspace Task Management,Sprint Backlog (In Progress),In progress,Important,SUHAS  THAMMYSETTY  (RA2311003011329),SUHAS  THAMMYSETTY  (RA2311003011329),03/10/2026,03/22/2026,03/27/2026,false,true,,,3/4,Add tasks from notes and workspace dashboard;Track task updates/changes;Assign tasks to users and set due dates;Display task progress/status,User Story;Functional;Sprint 2;Must have,"Priority: Important
+Description:
+Users can create and manage tasks within notes or the workspace dashboard. Tasks can be assigned to team members, tracked by status, and users receive notifications for updates.
+Acceptance Criteria:
+Users can create tasks in notes or on the dashboard
+Tasks can be assigned with due dates
+Task status can be updated (To Do, Doing, Done)
+Estimation: Medium (5 days)"
+zhyCB-KWv0qUWmBxZ1BccMkAF8uq,User Story 9 - Note Linking & Relationship Visualization,Product Backlog (User Stories),Not started,Medium,SUHAS  THAMMYSETTY  (RA2311003011329),SUHAS  THAMMYSETTY  (RA2311003011329),03/10/2026,03/31/2026,04/04/2026,false,true,,,0/3,Highlight dependencies and interconnected notes;Build relationship graph visualization UI;Enable linking from one note to another,User Story;Functional;Sprint 2;Could have,"Priority: Medium
+Description:
+Users can connect notes with each other and view how they are related through a visual graph, making it easier to understand dependencies and relationships.
+Acceptance Criteria:
+Users can link one note to another within the workspace
+A visual graph shows how notes are connected
+Users can view and manage dependencies between notes
+Estimation: Medium (4 days)"
