@@ -1,0 +1,36 @@
+C:\Users\heysu\Desktop\nv\backend\node_modules\@prisma\client\runtime\client.js:70
+${n}`}var Ul=require("@prisma/client-runtime-utils");function Bl(e){return e.length===0?Promise.resolve([]):new Promise((t,r)=>{let n=new Array(e.length),i=null,o=!1,s=0,a=()=>{o||(s++,s===e.length&&(o=!0,i?r(i):t(n)))},l=u=>{o||(o=!0,r(u))};for(let u=0;u<e.length;u++)e[u].then(c=>{n[u]=c,a()},c=>{if(!(0,Ul.hasBatchIndex)(c)){l(c);return}c.batchRequestIdx===u?l(c):(i||(i=c),a())})})}var Bt=F("prisma:client");typeof globalThis=="object"&&(globalThis.NODE_CLIENT=!0);var Im={requestArgsToMiddlewareArgs:e=>e,middlewareArgsToRequestArgs:e=>e},Om=Symbol.for("prisma.client.transaction.id"),Nm={id:0,nextId(){return++this.id}};function zl(e){class t{_originalClient=this;_runtimeDataModel;_requestHandler;_connectionPromise;_disconnectionPromise;_engineConfig;_accelerateEngineConfig;_clientVersion;_errorFormat;_tracingHelper;_previewFeatures;_activeProvider;_globalOmit;_extensions;_engine;_appliedParent;_createPrismaPromise=di();constructor(n){if(!n)throw new w.PrismaClientInitializationError("`PrismaClient` needs to be constructed with a non-empty, valid `PrismaClientOptions`:\n\n```\nnew PrismaClient({\n  ...\n})\n```\n\nor\n\n```\nconstructor() {\n  super({ ... });\n}\n```\n          ",hi);e=n.__internal?.configOverride?.(e)??e,jl(n,e);let i=new Gl.EventEmitter().on("error",()=>{});this._extensions=Be.empty(),this._previewFeatures=e.previewFeatures,this._clientVersion=e.clientVersion??hi,this._activeProvider=e.activeProvider,this._globalOmit=n?.omit,this._tracingHelper=kl();let o;if(n.adapter){o=n.adapter;let s=e.activeProvider==="postgresql"||e.activeProvider==="cockroachdb"?"postgres":e.activeProvider;if(o.provider!==s)throw new w.PrismaClientInitializationError(`The Driver Adapter \`${o.adapterName}\`, based on \`${o.provider}\`, is not compatible with the provider \`${s}\` specified in the Prisma schema.`,this._clientVersion)}try{let s=n??{},l=(s.__internal??{}).debug===!0;if(l&&F.enable("prisma:client"),s.errorFormat?this._errorFormat=s.errorFormat:process.env.NODE_ENV==="production"?this._errorFormat="minimal":process.env.NO_COLOR?this._errorFormat="colorless":this._errorFormat="colorless",this._runtimeDataModel=e.runtimeDataModel,this._engineConfig={enableDebugLogs:l,logLevel:s.log&&Ol(s.log),logQueries:s.log&&!!(typeof s.log=="string"?s.log==="query":s.log.find(u=>typeof u=="string"?u==="query":u.level==="query")),compilerWasm:e.compilerWasm,clientVersion:e.clientVersion,previewFeatures:this._previewFeatures,activeProvider:e.activeProvider,inlineSchema:e.inlineSchema,tracingHelper:this._tracingHelper,transactionOptions:{maxWait:s.transactionOptions?.maxWait??2e3,timeout:s.transactionOptions?.timeout??5e3,isolationLevel:s.transactionOptions?.isolationLevel},logEmitter:i,adapter:o,accelerateUrl:s.accelerateUrl,sqlCommenters:s.comments,parameterizationSchema:e.parameterizationSchema,runtimeDataModel:e.runtimeDataModel},this._accelerateEngineConfig=Object.create(this._engineConfig),this._accelerateEngineConfig.accelerateUtils={resolveDatasourceUrl:()=>{if(s.accelerateUrl)return s.accelerateUrl;throw new w.PrismaClientInitializationError(`\`accelerateUrl\` is required when using \`@prisma/extension-accelerate\`:
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         ^
+
+PrismaClientInitializationError: `PrismaClient` needs to be constructed with a non-empty, valid `PrismaClientOptions`:
+
+```
+new PrismaClient({
+  ...
+})
+```
+
+or
+
+```
+constructor() {
+  super({ ... });
+}
+```
+          
+    at new t (C:\Users\heysu\Desktop\nv\backend\node_modules\@prisma\client\runtime\client.js:70:960)
+    at Object.<anonymous> (C:\Users\heysu\Desktop\nv\backend\utils\db.js:2:16)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Object..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at require (node:internal/modules/helpers:147:16) {
+  clientVersion: '7.4.2',
+  errorCode: undefined,
+  retryable: undefined
+}
+
+Node.js v22.19.0
