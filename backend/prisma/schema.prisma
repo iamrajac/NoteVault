@@ -20,7 +20,9 @@ model User {
   projects      ProjectMember[] // User is a member of projects
   tasks         TaskAssignee[]
   notes         Note[]            // Notes authored by the user
-  approvedNotes Note[]            @relation("NoteApprover") // Notes approved by the user
+  approvedNotes Note[]            @relation("NoteApprover")
+  noteVersions   NoteVersion[] @relation("NoteVersionAuthor")
+  noteEditLogs   NoteEditLog[] // Notes approved by the user
   notifications Notification[]
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
@@ -139,6 +141,8 @@ model Note {
   linksOut    NoteLink[] @relation("SourceLinks")
   linksIn     NoteLink[] @relation("TargetLinks")
   versions    NoteVersion[]
+  editLogs    NoteEditLog[]
+  taggedEntities NoteTag[]
 }
 
 model NoteLink {
@@ -154,9 +158,13 @@ model NoteLink {
 model NoteVersion {
   id        String   @id @default(uuid())
   noteId    String
+  version   Int      @default(1)
+  title     String?
+  tags      String?
   content   String   @db.LongText
   createdAt DateTime @default(now())
   note      Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  @@unique([noteId, version])
 }
 
 model ChangelogAnnotation {
@@ -200,3 +208,30 @@ model Notification {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+model NoteEditLog {
+  id          String   @id @default(uuid())
+  noteId      String
+  userId      String
+  action      String   // 'created', 'updated', 'status_changed', 'linked', 'unlinked', 'tagged', 'untagged'
+  details     String?  @db.Text // JSON string with change details
+  createdAt   DateTime @default(now())
+  
+  note        Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model NoteTag {
+  id        String   @id @default(uuid())
+  noteId    String
+  version   Int      @default(1)
+  title     String?
+  tags      String?
+  entityType String  // 'note', 'task', 'milestone'
+  entityId  String
+  createdAt DateTime @default(now())
+  
+  note      Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  @@unique([noteId, version])
+
+  @@unique([noteId, entityType, entityId])
+}
