@@ -150,8 +150,15 @@ exports.login = async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    // Validate that the user has the requested role in at least one workspace
+    const userRoles = user.workspaces.map(ws => ws.role);
+    if (!userRoles.includes(role)) {
+      return res.status(403).json({
+        error: `You do not have ${role} access in any workspace. Your available roles are: ${userRoles.join(', ')}`
+      });
+    }
+
     const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
-    const userRole = role || 'Employee';
 
     res.json({
       token,
@@ -160,7 +167,7 @@ exports.login = async (req, res) => {
         email: user.email,
         name: user.name,
         workspaces: user.workspaces,
-        role: userRole
+        role: role // Use the validated role
       }
     });
   } catch (error) {
