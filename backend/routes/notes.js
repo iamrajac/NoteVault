@@ -20,4 +20,12 @@ router.patch('/:id/status', notesController.updateNoteStatus);
 // Link two notes
 router.post('/:id/links', notesController.linkNote);
 
+// Version history endpoints
+router.get('/:id/versions', notesController.getNoteVersions);
+router.get('/:id/versions/:versionId', notesController.getNoteVersion);
+router.post('/:id/versions/:versionId/restore', notesController.restoreNoteVersion);
+
+// Get edit logs for a note
+router.get('/:id/logs', notesController.getNoteEditLogs);
+
 module.exports = router;

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { io, Socket } from "socket.io-client";
-import { ArrowLeft, Save, CheckCircle2, ShieldAlert, XCircle, Loader2, Tag, Plus, Link as LinkIcon, CheckSquare } from "lucide-react";
+import { ArrowLeft, Save, CheckCircle2, ShieldAlert, XCircle, Loader2, Tag, Plus, Link as LinkIcon, CheckSquare, History, RotateCcw, Eye, X } from "lucide-react";
 
 export default function CollaborativeEditor() {
   const { id: noteId } = useParams();
@@ -16,6 +16,7 @@ export default function CollaborativeEditor() {
   const [content, setContent] = useState("");
   const [status, setStatus] = useState("Draft");
   const [tags, setTags] = useState("");
+  const [rejectionReason, setRejectionReason] = useState("");
   
   const [tasks, setTasks] = useState<any[]>([]);
   const [links, setLinks] = useState<any[]>([]);
@@ -23,6 +24,16 @@ export default function CollaborativeEditor() {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [activeUsers, setActiveUsers] = useState<number>(1);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Version history state
+  const [versions, setVersions] = useState<any[]>([]);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [selectedVersion, setSelectedVersion] = useState<any>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
+
+  // Rejection modal state
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
 
   // New Link/Task states
   const [newTaskName, setNewTaskName] = useState("");
@@ -57,9 +68,13 @@ export default function CollaborativeEditor() {
         setContent(data.content || "");
         setStatus(data.status);
         setTags(data.tags || "");
+        setRejectionReason(data.rejectionReason || "");
         setTasks(data.tasks || []);
         setLinks(data.linksOut || []);
       });
+      
+      // Fetch version history
+      fetchVersions();
   }, [noteId]);
 
   useEffect(() => {
@@ -97,6 +112,13 @@ export default function CollaborativeEditor() {
 
   const handleUpdateStatus = async (newStatus: string) => {
     if (!user) return;
+    
+    // If rejecting, show modal first
+    if (newStatus === "Rejected") {
+      setShowRejectModal(true);
+      return;
+    }
+    
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/notes/${noteId}/status`, {
         method: "PATCH",
@@ -106,8 +128,88 @@ export default function CollaborativeEditor() {
           approverId: newStatus === "Approved" ? user.id : null
         })
       });
-      if (res.ok) setStatus(newStatus);
+      if (res.ok) {
+        setStatus(newStatus);
+        // Refresh version history after rejection
+        fetchVersions();
+      }
     } catch(e) {}
+  };
+
+  const handleRejectWithReason = async () => {
+    if (!user || !rejectReason.trim()) return;
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/notes/${noteId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "Rejected",
+          approverId: user.id,
+          rejectionReason: rejectReason
+        })
+      });
+      if (res.ok) {
+        setStatus("Rejected");
+        setRejectionReason(rejectReason);
+        setShowRejectModal(false);
+        setRejectReason("");
+        // Refresh version history
+        fetchVersions();
+      }
+    } catch(e) {}
+  };
+
+  // Fetch version history
+  const fetchVersions = async () => {
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/notes/${noteId}/versions`);
+      if (res.ok) {
+        const data = await res.json();
+        setVersions(data);
+      }
+    } catch(e) {
+      console.error("Failed to fetch versions:", e);
+    }
+  };
+
+  // View version details
+  const handleViewVersion = async (version: any) => {
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/notes/${noteId}/versions/${version.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedVersion(data);
+      }
+    } catch(e) {
+      console.error("Failed to fetch version:", e);
+    }
+  };
+
+  // Restore note to a specific version
+  const handleRestoreVersion = async (versionId: string) => {
+    if (!user) return;
+    setIsRestoring(true);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/notes/${noteId}/versions/${versionId}/restore`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setNote(data);
+        setContent(data.content || "");
+        setTags(data.tags || "");
+        setStatus(data.status);
+        setSelectedVersion(null);
+        setShowVersionHistory(false);
+        // Refresh version history
+        fetchVersions();
+      }
+    } catch(e) {
+      console.error("Failed to restore version:", e);
+    }
+    setIsRestoring(false);
   };
 
   const handleCreateTask = async (e: React.FormEvent) => {
@@ -168,7 +270,15 @@ export default function CollaborativeEditor() {
               <div className="flex items-center space-x-3 text-[11px] font-medium text-slate-500">
                 <span>Authored by {note.author?.name}</span>
                 {status === "Pending Review" && <span className="text-amber-500">Needs Approval</span>}
-                {status === "Rejected" && <span className="text-red-500 flex items-center space-x-1"><XCircle className="h-3 w-3" /> <span>Rejected</span></span>}
+                {status === "Rejected" && (
+                  <span className="text-red-500 flex items-center space-x-1">
+                    <XCircle className="h-3 w-3" /> 
+                    <span>Rejected</span>
+                    {rejectionReason && (
+                      <span className="ml-1 text-red-400" title={rejectionReason}>- {rejectionReason.substring(0, 30)}...</span>
+                    )}
+                  </span>
+                )}
                 {status === "Approved" && <span className="text-emerald-500 flex items-center space-x-1"><CheckCircle2 className="h-3 w-3" /> <span>Approved</span></span>}
               </div>
             </div>
@@ -178,6 +288,15 @@ export default function CollaborativeEditor() {
             <div className="hidden md:flex items-center space-x-2 mr-4">
               <span className="text-xs font-semibold text-slate-400">{activeUsers} online</span>
             </div>
+
+            {/* Version History Button */}
+            <button 
+              onClick={() => { setShowVersionHistory(true); fetchVersions(); }} 
+              className="flex items-center space-x-1 rounded-lg bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 transition hover:bg-slate-200 dark:hover:bg-slate-700"
+            >
+              <History className="h-3.5 w-3.5" />
+              <span>History</span>
+            </button>
 
             {/* Workflow Gates */}
             {(status === "Draft" || status === "Rejected") && (
@@ -287,6 +406,156 @@ export default function CollaborativeEditor() {
          </section>
 
       </aside>
+
+      {/* Rejection Reason Modal */}
+      {showRejectModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center">
+                <XCircle className="h-5 w-5 text-red-500 mr-2" />
+                Reject Note
+              </h3>
+              <button onClick={() => setShowRejectModal(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-sm text-slate-600 dark:text-slate-300 mb-4">
+              Please provide a reason for rejecting this note. This will be saved with the version history.
+            </p>
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="Enter rejection reason..."
+              className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent px-4 py-3 text-sm outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 dark:bg-slate-800"
+              rows={4}
+            />
+            <div className="flex justify-end space-x-3 mt-4">
+              <button 
+                onClick={() => setShowRejectModal(false)}
+                className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleRejectWithReason}
+                disabled={!rejectReason.trim()}
+                className="px-4 py-2 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Reject Note
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Version History Modal */}
+      {showVersionHistory && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 w-full max-w-2xl mx-4 shadow-2xl max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between mb-4 shrink-0">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center">
+                <History className="h-5 w-5 text-indigo-500 mr-2" />
+                Version History
+              </h3>
+              <button onClick={() => { setShowVersionHistory(false); setSelectedVersion(null); }} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            {selectedVersion ? (
+              // Version detail view
+              <div className="flex-1 overflow-y-auto">
+                <div className="mb-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-xl">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-bold text-slate-900 dark:text-white">
+                      Version {selectedVersion.version}
+                    </span>
+                    <span className="text-xs text-slate-500">
+                      {new Date(selectedVersion.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                  {selectedVersion.rejectionReason && (
+                    <div className="mb-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                      <p className="text-xs font-bold text-red-600 dark:text-red-400 mb-1">Rejection Reason:</p>
+                      <p className="text-sm text-red-700 dark:text-red-300">{selectedVersion.rejectionReason}</p>
+                    </div>
+                  )}
+                  <div className="mb-2">
+                    <p className="text-xs font-semibold text-slate-500 mb-1">Title:</p>
+                    <p className="text-sm text-slate-900 dark:text-slate-200">{selectedVersion.title}</p>
+                  </div>
+                  <div className="mb-2">
+                    <p className="text-xs font-semibold text-slate-500 mb-1">Tags:</p>
+                    <p className="text-sm text-slate-900 dark:text-slate-200">{selectedVersion.tags || "None"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 mb-1">Content:</p>
+                    <div className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-700 max-h-40 overflow-y-auto">
+                      {selectedVersion.content}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex justify-between">
+                  <button 
+                    onClick={() => setSelectedVersion(null)}
+                    className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+                  >
+                    Back to List
+                  </button>
+                  <button 
+                    onClick={() => handleRestoreVersion(selectedVersion.id)}
+                    disabled={isRestoring}
+                    className="flex items-center space-x-2 px-4 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition disabled:opacity-50"
+                  >
+                    {isRestoring ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                    <span>Restore This Version</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              // Version list view
+              <div className="flex-1 overflow-y-auto">
+                {versions.length === 0 ? (
+                  <p className="text-sm text-slate-500 text-center py-8">No version history yet. Versions are created when notes are updated or rejected.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {versions.map((version) => (
+                      <div 
+                        key={version.id} 
+                        className="p-4 bg-slate-50 dark:bg-slate-800 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer"
+                        onClick={() => handleViewVersion(version)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <span className="text-sm font-bold text-slate-900 dark:text-white">Version {version.version}</span>
+                            {version.rejectionReason && (
+                              <span className="px-2 py-0.5 text-xs font-medium bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full">
+                                Rejected
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs text-slate-500">
+                            {new Date(version.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+                        {version.rejectionReason && (
+                          <p className="text-xs text-red-600 dark:text-red-400 mt-2 line-clamp-2">
+                            Reason: {version.rejectionReason}
+                          </p>
+                        )}
+                        <p className="text-xs text-slate-500 mt-2 line-clamp-1">
+                          {version.title}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
     </div>
   );
