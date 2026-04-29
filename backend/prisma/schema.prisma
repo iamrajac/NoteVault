@@ -116,14 +116,15 @@ model TaskAssignee {
 }
 
 model Note {
-  id          String   @id @default(uuid())
-  title       String
-  content     String   @db.LongText
-  status      String   @default("Draft") // Draft, Pending Review, Approved
-  tags        String   @default("") // Comma-separated tags
+  id              String   @id @default(uuid())
+  title           String
+  content         String   @db.LongText
+  status          String   @default("Draft") // Draft, Pending Review, Approved, Rejected
+  tags            String   @default("") // Comma-separated tags
+  rejectionReason String?  @db.Text // Reason when note is rejected
   
-  projectId   String
-  project     Project  @relation(fields: [projectId], references: [id])
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id])
   
   authorId    String
   author      User     @relation(fields: [authorId], references: [id])
@@ -156,14 +157,19 @@ model NoteLink {
 }
 
 model NoteVersion {
-  id        String   @id @default(uuid())
-  noteId    String
-  version   Int      @default(1)
-  title     String?
-  tags      String?
-  content   String   @db.LongText
-  createdAt DateTime @default(now())
-  note      Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  id              String   @id @default(uuid())
+  noteId          String
+  version         Int      @default(1)
+  title           String?
+  tags            String?
+  content         String   @db.LongText
+  rejectionReason String?  @db.Text // Reason if this version was rejected
+  createdAt       DateTime @default(now())
+  
+  note            Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  author          User?    @relation("NoteVersionAuthor", fields: [authorId], references: [id])
+  authorId        String?
+  
   @@unique([noteId, version])
 }
 
