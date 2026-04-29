@@ -44,17 +44,30 @@ io.on('connection', (socket) => {
 
   socket.on('join-note', (noteId) => {
     socket.join(noteId);
-    console.log(`[Socket] User joined note room: ${noteId}`);
+    const clientsInRoom = io.sockets.adapter.rooms.get(noteId)?.size || 0;
+    io.to(noteId).emit('active-users', clientsInRoom);
+    console.log(`[Socket] User joined note room: ${noteId}, total: ${clientsInRoom}`);
   });
 
   socket.on('leave-note', (noteId) => {
     socket.leave(noteId);
+    const clientsInRoom = io.sockets.adapter.rooms.get(noteId)?.size || 0;
+    io.to(noteId).emit('active-users', clientsInRoom);
   });
 
   socket.on('note-change', (data) => {
     // Expected structure: { noteId, content, cursor }
     // Broadcast back to everyone in the room except sender
     socket.to(data.noteId).emit('receive-note-change', data);
+  });
+
+  socket.on('disconnecting', () => {
+    for (const room of socket.rooms) {
+      if (room !== socket.id) {
+        const clientsInRoom = (io.sockets.adapter.rooms.get(room)?.size || 1) - 1;
+        io.to(room).emit('active-users', clientsInRoom);
+      }
+    }
   });
 
   socket.on('disconnect', () => {
