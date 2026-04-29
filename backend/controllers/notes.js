@@ -99,7 +99,8 @@ exports.updateNoteStatus = async (req, res) => {
           title: currentNote.title,
           tags: currentNote.tags,
           content: currentNote.content,
-          rejectionReason: rejectionReason || "No reason provided"
+          rejectionReason: rejectionReason || "No reason provided",
+          authorId: currentNote.authorId
         }
       });
 
@@ -275,6 +276,9 @@ exports.getNoteVersion = async (req, res) => {
       where: { 
         noteId: id,
         id: versionId
+      },
+      include: {
+        author: { select: { id: true, name: true, email: true } }
       }
     });
 
@@ -327,7 +331,8 @@ exports.restoreNoteVersion = async (req, res) => {
         title: currentNote.title,
         tags: currentNote.tags,
         content: currentNote.content,
-        rejectionReason: null
+        rejectionReason: null,
+        authorId: userId || currentNote.authorId
       }
     });
 

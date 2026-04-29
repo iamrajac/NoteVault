@@ -40,6 +40,11 @@ export default function CollaborativeEditor() {
   const [newLinkedNoteId, setNewLinkedNoteId] = useState("");
   const [workspaceNotes, setWorkspaceNotes] = useState<any[]>([]);
 
+  // Save Modal States
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [saveToVersion, setSaveToVersion] = useState(false);
+  const [selectedVersionNumber, setSelectedVersionNumber] = useState<string>("");
+
   useEffect(() => {
     const storedUser = localStorage.getItem("nv_user");
     if (storedUser) {
@@ -81,10 +86,14 @@ export default function CollaborativeEditor() {
     const s = io(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}`);
     setSocket(s);
     s.emit("join-note", noteId);
+    
     s.on("receive-note-change", (data) => {
       setContent(data.content);
     });
-    setActiveUsers(Math.floor(Math.random() * 3) + 1);
+    
+    s.on("active-users", (count) => {
+      setActiveUsers(count);
+    });
 
     return () => {
       s.emit("leave-note", noteId);
@@ -99,13 +108,26 @@ export default function CollaborativeEditor() {
   };
 
   const handleManualSave = async () => {
+    if (!showSaveModal) {
+      setShowSaveModal(true);
+      return;
+    }
+
     setIsSaving(true);
     try {
       await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/notes/${noteId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, tags })
+        body: JSON.stringify({ 
+          content, 
+          tags,
+          userId: user?.id,
+          saveToVersion,
+          versionNumber: selectedVersionNumber ? parseInt(selectedVersionNumber) : undefined
+        })
       });
+      setShowSaveModal(false);
+      fetchVersions();
     } catch(e) {}
     setIsSaving(false);
   };
@@ -475,6 +497,11 @@ export default function CollaborativeEditor() {
                       {new Date(selectedVersion.createdAt).toLocaleString()}
                     </span>
                   </div>
+                  <div className="mb-3">
+                    <p className="text-xs font-semibold text-slate-500">
+                      Authored by: <span className="text-slate-900 dark:text-slate-300 font-medium">{selectedVersion.author?.name || "Unknown"}</span>
+                    </p>
+                  </div>
                   {selectedVersion.rejectionReason && (
                     <div className="mb-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
                       <p className="text-xs font-bold text-red-600 dark:text-red-400 mb-1">Rejection Reason:</p>
@@ -539,6 +566,9 @@ export default function CollaborativeEditor() {
                             {new Date(version.createdAt).toLocaleString()}
                           </span>
                         </div>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Authored by: <span className="font-medium">{version.author?.name || "Unknown"}</span>
+                        </p>
                         {version.rejectionReason && (
                           <p className="text-xs text-red-600 dark:text-red-400 mt-2 line-clamp-2">
                             Reason: {version.rejectionReason}
@@ -553,6 +583,81 @@ export default function CollaborativeEditor() {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Save Note Modal */}
+      {showSaveModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center">
+                <Save className="h-5 w-5 text-indigo-500 mr-2" />
+                Save Note Options
+              </h3>
+              <button onClick={() => setShowSaveModal(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="space-y-4 mb-6">
+              <label className="flex items-center space-x-3 cursor-pointer">
+                <input 
+                  type="radio" 
+                  name="saveOption" 
+                  checked={!saveToVersion} 
+                  onChange={() => setSaveToVersion(false)} 
+                  className="w-4 h-4 text-indigo-600 bg-slate-100 border-slate-300 focus:ring-indigo-500 dark:focus:ring-indigo-600 dark:ring-offset-slate-800 focus:ring-2 dark:bg-slate-700 dark:border-slate-600"
+                />
+                <span className="text-sm font-medium text-slate-900 dark:text-slate-300">Create New Version</span>
+              </label>
+              
+              <label className="flex items-center space-x-3 cursor-pointer">
+                <input 
+                  type="radio" 
+                  name="saveOption" 
+                  checked={saveToVersion} 
+                  onChange={() => setSaveToVersion(true)} 
+                  className="w-4 h-4 text-indigo-600 bg-slate-100 border-slate-300 focus:ring-indigo-500 dark:focus:ring-indigo-600 dark:ring-offset-slate-800 focus:ring-2 dark:bg-slate-700 dark:border-slate-600"
+                />
+                <span className="text-sm font-medium text-slate-900 dark:text-slate-300">Update Existing Version</span>
+              </label>
+              
+              {saveToVersion && (
+                <div className="pl-7 mt-2">
+                  <select 
+                    value={selectedVersionNumber} 
+                    onChange={(e) => setSelectedVersionNumber(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  >
+                    <option value="" disabled className="dark:bg-slate-800">Select a version to overwrite...</option>
+                    {versions.map(v => (
+                      <option key={v.id} value={v.version} className="dark:bg-slate-800">
+                        Version {v.version} - {v.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end space-x-3">
+              <button 
+                onClick={() => setShowSaveModal(false)}
+                className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleManualSave}
+                disabled={isSaving || (saveToVersion && !selectedVersionNumber)}
+                className="flex items-center space-x-2 px-4 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition disabled:opacity-50"
+              >
+                {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                <span>Save Note</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
