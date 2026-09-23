@@ -1,0 +1,2 @@
+# URL of the NoteVault API (backend). Built into the browser bundle, so rebuild after changing it.
+NEXT_PUBLIC_API_URL=http://localhost:5069

@@ -118,6 +118,13 @@ The API refuses to start in production if a required variable is missing or `JWT
 
 Invitations and password resets are sent by email. **Without email settings, password reset does not work in production** (invites still work, since the Admin can copy the invite link).
 
+**On Render's free plan, use Brevo.** Render's free plan blocks the ports that Gmail and SMTP use, so send through Brevo's web API instead. It's free for 300 emails a day. Verify your sender address in Brevo, create an API key (SMTP & API > API Keys), then set:
+
+```
+BREVO_API_KEY=<api key>
+SMTP_FROM=NoteVault <you@gmail.com>
+```
+
 **Option A: Gmail.** Easiest; about 500 emails a day. Create a Gmail account for the app, turn on 2-step verification, create an [App Password](https://myaccount.google.com/apppasswords), then set:
 
 ```

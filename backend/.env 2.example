@@ -19,24 +19,10 @@ FRONTEND_URL="http://localhost:3000"
 # Set to 1 when running behind a proxy/load balancer (Render, Railway, Fly, Nginx) so rate limiting sees real client IPs.
 # TRUST_PROXY=1
 
-# Email for invitations and password resets. Without it, emails are printed to the console in development
-# (and not sent at all in production). Pick ONE option:
-#
-# Option A - Gmail: a Gmail address + App Password (Google Account > Security > App passwords; needs 2-step verification)
+# Gmail account + App Password (Google Account > Security > App passwords) for invite and reset emails.
+# Without these, emails are printed to the console in development.
 SMTP_EMAIL=""
 SMTP_APP_PASSWORD=""
-#
-# Option B - Brevo HTTP API (recommended on Render's free plan, which blocks SMTP ports).
-# Create an API key in Brevo (SMTP & API > API Keys) and verify the sender address in Brevo.
-# BREVO_API_KEY=""
-# SMTP_FROM="NoteVault <you@gmail.com>"
-#
-# Option C - any SMTP provider (Resend, Brevo, SendGrid, Mailgun, Postmark...). Use the values from the provider's SMTP settings.
-# SMTP_HOST="smtp.resend.com"
-# SMTP_PORT=587
-# SMTP_USER="resend"
-# SMTP_PASS=""
-# SMTP_FROM="NoteVault <noreply@yourdomain.com>"
 
 # Set to false to disable the hourly due-date reminder job (e.g. when running several API instances).
 # ENABLE_CRON=true
