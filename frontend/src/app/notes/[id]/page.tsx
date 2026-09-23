@@ -2,18 +2,23 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { io, Socket } from "socket.io-client";
 import { ArrowLeft, Save, CheckCircle2, ShieldAlert, XCircle, Loader2, Tag, Plus, Link as LinkIcon, CheckSquare, History, RotateCcw, Eye, X } from "lucide-react";
+import { apiFetch, errorMessage, NETWORK_ERROR } from "@/lib/api";
+import { useCollaborativeText } from "@/lib/useCollaborativeText";
+import { getActiveWorkspace } from "@/lib/session";
 
 export default function CollaborativeEditor() {
-  const { id: noteId } = useParams();
+  const { id } = useParams();
+  const noteId = Array.isArray(id) ? id[0] : (id as string);
   const router = useRouter();
   
   const [user, setUser] = useState<any>(null);
   const [workspace, setWorkspace] = useState<any>(null);
   const [note, setNote] = useState<any>(null);
   
-  const [content, setContent] = useState("");
+  const live = useCollaborativeText(noteId);
+  const content = live.content;
+  const [actionError, setActionError] = useState<string | null>(null);
   const [status, setStatus] = useState("Draft");
   const [tags, setTags] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
@@ -21,8 +26,6 @@ export default function CollaborativeEditor() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [links, setLinks] = useState<any[]>([]);
   
-  const [socket, setSocket] = useState<Socket | null>(null);
-  const [activeUsers, setActiveUsers] = useState<number>(1);
   const [isSaving, setIsSaving] = useState(false);
 
   // Version history state
@@ -51,14 +54,14 @@ export default function CollaborativeEditor() {
       const parsedUser = JSON.parse(storedUser);
       setUser(parsedUser);
       if (parsedUser.workspaces?.length > 0) {
-         setWorkspace(parsedUser.workspaces[0]);
-         const ws = parsedUser.workspaces[0];
+         setWorkspace(getActiveWorkspace(parsedUser)!);
+         const ws = getActiveWorkspace(parsedUser)!;
          // Pre-fetch notes for linking dropdown
-         fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/projects/${ws.workspaceId}?userId=${parsedUser.id}&userRole=${ws.role}`)
+         apiFetch(`/api/projects/${ws.workspaceId}`)
            .then(res => res.json())
            .then(async (projects) => {
               if (projects.length > 0) {
-                 const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/notes/project/${projects[0].id}`);
+                 const res = await apiFetch(`/api/notes/project/${projects[0].id}`);
                  if (res.ok) setWorkspaceNotes(await res.json());
               }
            });
@@ -66,46 +69,27 @@ export default function CollaborativeEditor() {
     }
     
     // Fetch initial Note Data
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/notes/${noteId}`)
-      .then(res => res.json())
+    apiFetch(`/api/notes/${noteId}`)
+      .then(async res => {
+        if (!res.ok) throw new Error(await errorMessage(res, "Could not load this note."));
+        return res.json();
+      })
       .then(data => {
         setNote(data);
-        setContent(data.content || "");
         setStatus(data.status);
         setTags(data.tags || "");
         setRejectionReason(data.rejectionReason || "");
         setTasks(data.tasks || []);
         setLinks(data.linksOut || []);
-      });
+      })
+      .catch((e) => setActionError(e.message === "Failed to fetch" ? NETWORK_ERROR : e.message));
       
       // Fetch version history
       fetchVersions();
   }, [noteId]);
 
-  useEffect(() => {
-    const s = io(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}`);
-    setSocket(s);
-    s.emit("join-note", noteId);
-    
-    s.on("receive-note-change", (data) => {
-      setContent(data.content);
-    });
-    
-    s.on("active-users", (count) => {
-      setActiveUsers(count);
-    });
 
-    return () => {
-      s.emit("leave-note", noteId);
-      s.disconnect();
-    };
-  }, [noteId]);
-
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newContent = e.target.value;
-    setContent(newContent);
-    if (socket) socket.emit("note-change", { noteId, content: newContent });
-  };
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => live.onChange(e.target.value);
 
   const handleManualSave = async () => {
     if (!showSaveModal) {
@@ -114,21 +98,26 @@ export default function CollaborativeEditor() {
     }
 
     setIsSaving(true);
+    setActionError(null);
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/notes/${noteId}`, {
+      const res = await apiFetch(`/api/notes/${noteId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           content, 
           tags,
-          userId: user?.id,
           saveToVersion,
           versionNumber: selectedVersionNumber ? parseInt(selectedVersionNumber) : undefined
         })
       });
-      setShowSaveModal(false);
-      fetchVersions();
-    } catch(e) {}
+      if (!res.ok) {
+        setActionError(await errorMessage(res, "Could not save the note."));
+      } else {
+        setShowSaveModal(false);
+        fetchVersions();
+      }
+    } catch(e) {
+      setActionError(NETWORK_ERROR);
+    }
     setIsSaving(false);
   };
 
@@ -142,31 +131,30 @@ export default function CollaborativeEditor() {
     }
     
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/notes/${noteId}/status`, {
+      const res = await apiFetch(`/api/notes/${noteId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: newStatus,
-          approverId: newStatus === "Approved" ? user.id : null
-        })
+        body: JSON.stringify({ status: newStatus })
       });
       if (res.ok) {
         setStatus(newStatus);
-        // Refresh version history after rejection
         fetchVersions();
+      } else {
+        setActionError(await errorMessage(res, "Could not change the status."));
       }
-    } catch(e) {}
+    } catch(e) {
+      setActionError(NETWORK_ERROR);
+    }
   };
 
   const handleRejectWithReason = async () => {
     if (!user || !rejectReason.trim()) return;
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/notes/${noteId}/status`, {
+      const res = await apiFetch(`/api/notes/${noteId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           status: "Rejected",
-          approverId: user.id,
           rejectionReason: rejectReason
         })
       });
@@ -175,16 +163,19 @@ export default function CollaborativeEditor() {
         setRejectionReason(rejectReason);
         setShowRejectModal(false);
         setRejectReason("");
-        // Refresh version history
         fetchVersions();
+      } else {
+        setActionError(await errorMessage(res, "Could not reject the note."));
       }
-    } catch(e) {}
+    } catch(e) {
+      setActionError(NETWORK_ERROR);
+    }
   };
 
   // Fetch version history
   const fetchVersions = async () => {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/notes/${noteId}/versions`);
+      const res = await apiFetch(`/api/notes/${noteId}/versions`);
       if (res.ok) {
         const data = await res.json();
         setVersions(data);
@@ -197,7 +188,7 @@ export default function CollaborativeEditor() {
   // View version details
   const handleViewVersion = async (version: any) => {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/notes/${noteId}/versions/${version.id}`);
+      const res = await apiFetch(`/api/notes/${noteId}/versions/${version.id}`);
       if (res.ok) {
         const data = await res.json();
         setSelectedVersion(data);
@@ -212,24 +203,24 @@ export default function CollaborativeEditor() {
     if (!user) return;
     setIsRestoring(true);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/notes/${noteId}/versions/${versionId}/restore`, {
+      const res = await apiFetch(`/api/notes/${noteId}/versions/${versionId}/restore`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user.id })
       });
       if (res.ok) {
         const data = await res.json();
         setNote(data);
-        setContent(data.content || "");
         setTags(data.tags || "");
         setStatus(data.status);
         setSelectedVersion(null);
         setShowVersionHistory(false);
         // Refresh version history
         fetchVersions();
+      } else {
+        setActionError(await errorMessage(res, "Could not restore that version."));
       }
     } catch(e) {
-      console.error("Failed to restore version:", e);
+      setActionError(NETWORK_ERROR);
     }
     setIsRestoring(false);
   };
@@ -238,14 +229,13 @@ export default function CollaborativeEditor() {
     e.preventDefault();
     if (!newTaskName || !note) return;
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/tasks`, {
+      const res = await apiFetch(`/api/tasks`, {
         method: "POST",
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify({
           projectId: note.projectId,
           name: newTaskName,
           priority: "Medium",
-          userRole: workspace?.role,
           noteId: note.id
         })
       });
@@ -253,27 +243,52 @@ export default function CollaborativeEditor() {
         const t = await res.json();
         setTasks([...tasks, t]);
         setNewTaskName("");
+      } else {
+        setActionError(await errorMessage(res, "Could not create the task."));
       }
-    } catch(e) {}
+    } catch(e) {
+      setActionError(NETWORK_ERROR);
+    }
   };
 
   const handleLinkNote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newLinkedNoteId) return;
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/notes/${noteId}/links`, {
+      const res = await apiFetch(`/api/notes/${noteId}/links`, {
         method: "POST",
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify({ targetId: newLinkedNoteId })
       });
       if (res.ok) {
-         setLinks([...links, { targetId: newLinkedNoteId, target: workspaceNotes.find(n => n.id === newLinkedNoteId) }]);
+         setLinks([...links, await res.json()]);
          setNewLinkedNoteId("");
+      } else {
+        setActionError(await errorMessage(res, "Could not link the notes."));
       }
-    } catch(e) {}
+    } catch(e) {
+      setActionError(NETWORK_ERROR);
+    }
   };
 
-  if (!note) return <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-900"><Loader2 className="h-8 w-8 animate-spin text-indigo-500" /></div>;
+  if (!note) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-slate-50 dark:bg-slate-900">
+        {actionError ? (
+          <>
+            <p className="text-sm text-red-600 dark:text-red-400">{actionError}</p>
+            <button onClick={() => router.push("/notes")} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white dark:bg-slate-100 dark:text-slate-900">Back to notes</button>
+          </>
+        ) : (
+          <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
+        )}
+      </div>
+    );
+  }
+
+  const isAuthor = note.authorId === user?.id;
+  const liveLabel = { connecting: "Connecting…", live: "Live", offline: "Offline – reconnecting", error: "Live editing unavailable" }[live.status];
+  const liveColor = { connecting: "bg-slate-400", live: "bg-emerald-500", offline: "bg-amber-500", error: "bg-red-500" }[live.status];
 
   const isApprover = workspace?.role === "Admin" || workspace?.role === "Team Lead";
 
@@ -308,7 +323,8 @@ export default function CollaborativeEditor() {
 
           <div className="flex items-center space-x-4">
             <div className="hidden md:flex items-center space-x-2 mr-4">
-              <span className="text-xs font-semibold text-slate-400">{activeUsers} online</span>
+              <span className={`h-2 w-2 rounded-full ${liveColor}`} />
+              <span className="text-xs font-semibold text-slate-400">{liveLabel}{live.status === "live" ? ` · ${live.activeUsers} online` : ""}</span>
             </div>
 
             {/* Version History Button */}
@@ -321,7 +337,7 @@ export default function CollaborativeEditor() {
             </button>
 
             {/* Workflow Gates */}
-            {(status === "Draft" || status === "Rejected") && (
+            {(status === "Draft" || status === "Rejected") && (isAuthor || isApprover) && (
               <button onClick={() => handleUpdateStatus("Pending Review")} className="rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-600 transition hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400">
                 Submit for Review
               </button>
@@ -349,11 +365,20 @@ export default function CollaborativeEditor() {
 
         <main className="flex-1 overflow-y-auto bg-slate-50/50 dark:bg-[#0B1120] relative">
           <div className="mx-auto max-w-4xl py-12 px-6">
+             {(actionError || live.error) && (
+               <div className="mb-6 flex items-start justify-between gap-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-300">
+                 <span>{actionError || live.error}</span>
+                 {actionError && <button onClick={() => setActionError(null)} aria-label="Dismiss"><X className="h-4 w-4" /></button>}
+               </div>
+             )}
              <textarea
+                ref={live.textareaRef}
                 autoFocus
                 value={content}
                 onChange={handleChange}
-                placeholder="Start typing your document..."
+                readOnly={!live.synced}
+                aria-label="Note content"
+                placeholder={live.synced ? "Start typing your document..." : "Loading…"}
                 className="w-full resize-none bg-transparent text-lg text-slate-700 outline-none placeholder:text-slate-300 dark:text-slate-300 dark:placeholder:text-slate-700 min-h-[500px] leading-relaxed"
              />
           </div>
@@ -404,7 +429,7 @@ export default function CollaborativeEditor() {
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center"><LinkIcon className="h-4 w-4 mr-1.5" /> Note Links</h3>
             <div className="space-y-2">
                {links.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">This note doesn't reference any others.</p>
+                  <p className="text-xs text-slate-400 italic">This note doesn&apos;t reference any others.</p>
                ) : (
                   links.map(l => (
                      <div key={l.targetId} className="p-2 border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 flex items-center">

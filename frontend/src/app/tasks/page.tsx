@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Search, CheckSquare, Loader2, X, AlertCircle, User as UserIcon } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
+import { apiAction, apiFetch } from "@/lib/api";
+import { getActiveWorkspace } from "@/lib/session";
 
 export default function TasksPage() {
   const [user, setUser] = useState<any>(null);
@@ -44,10 +46,10 @@ export default function TasksPage() {
       const parsedUser = JSON.parse(storedUser);
       setUser(parsedUser);
       if (parsedUser.workspaces?.length > 0) {
-        const activeWs = parsedUser.workspaces[0];
+        const activeWs = getActiveWorkspace(parsedUser)!;
         setWorkspace(activeWs);
         try {
-          const pRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/projects/${activeWs.workspaceId}?userId=${parsedUser.id}&userRole=${activeWs.role}`);
+          const pRes = await apiFetch(`/api/projects/${activeWs.workspaceId}`);
           if (pRes.ok) {
             const data = await pRes.json();
             setProjects(data);
@@ -55,7 +57,7 @@ export default function TasksPage() {
               setSelectedProjectId(data[0].id);
             }
           }
-          const mRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/workspaces/${activeWs.workspaceId}/members`);
+          const mRes = await apiFetch(`/api/workspaces/${activeWs.workspaceId}/members`);
           if (mRes.ok) setWorkspaceMembers(await mRes.json());
         } catch (error) {
           console.error("Failed to load generic projects data.");
@@ -68,7 +70,7 @@ export default function TasksPage() {
   const loadTasks = async (projectId: string) => {
     setLoading(true);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/tasks/${projectId}`);
+      const res = await apiFetch(`/api/tasks/${projectId}`);
       if (res.ok) setTasks(await res.json());
     } catch(err) {}
     setLoading(false);
@@ -78,10 +80,9 @@ export default function TasksPage() {
     e.preventDefault();
     if (!selectedProjectId || !workspace) return;
     
-    try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/tasks`, {
+    {
+      const created = await apiAction(`/api/tasks`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId: selectedProjectId,
           name: newTaskName,
@@ -89,12 +90,11 @@ export default function TasksPage() {
           priority: newTaskPriority,
           difficulty: newTaskDifficulty,
           assigneeId: newTaskAssignee,
-          dueDate: newTaskDate || null,
-          userRole: workspace.role
+          dueDate: newTaskDate ? new Date(newTaskDate).toISOString() : null
         })
-      });
+      }, "Could not create the task.");
 
-      if (res.ok) {
+      if (created) {
         setIsTaskModalOpen(false);
         setNewTaskName("");
         setNewTaskDesc("");
@@ -104,8 +104,6 @@ export default function TasksPage() {
         setNewTaskAssignee("auto");
         loadTasks(selectedProjectId);
       }
-    } catch (error) {
-      console.error(error);
     }
   };
 
@@ -113,19 +111,12 @@ export default function TasksPage() {
     // Optimistic UI update
     setTasks(tasks.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
 
-    try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/tasks/${taskId}/status`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: newStatus,
-          userId: user?.id
-        })
-      });
-    } catch (err) {
-      // Revert if failed
-      loadTasks(selectedProjectId);
-    }
+    const updated = await apiAction(`/api/tasks/${taskId}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: newStatus })
+    }, "Could not update the task.");
+    // Revert the optimistic update if the server refused it.
+    if (!updated) loadTasks(selectedProjectId);
   };
 
   const canCreateTasks = workspace?.role === "Admin" || workspace?.role === "Team Lead";

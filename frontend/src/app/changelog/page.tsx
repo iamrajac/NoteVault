@@ -6,6 +6,9 @@ import {
   Search, CheckSquare, FileText, Activity, Clock, Box, Plus, MessageSquare
 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
+import { apiFetch, errorMessage, NETWORK_ERROR } from "@/lib/api";
+import { toastError } from "@/lib/toast";
+import { getActiveWorkspace } from "@/lib/session";
 
 export default function ChangelogPage() {
   const [events, setEvents] = useState<any[]>([]);
@@ -22,8 +25,8 @@ export default function ChangelogPage() {
       const parsed = JSON.parse(storedUser);
       setUser(parsed);
       if (parsed.workspaces?.length > 0) {
-         setWorkspace(parsed.workspaces[0]);
-         fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/workspaces/${parsed.workspaces[0].workspaceId}/changelog`)
+         setWorkspace(getActiveWorkspace(parsed)!);
+         apiFetch(`/api/workspaces/${getActiveWorkspace(parsed)!.workspaceId}/changelog`)
            .then(res => res.json())
            .then(data => {
               setEvents(data);
@@ -39,22 +42,24 @@ export default function ChangelogPage() {
     e.preventDefault();
     if (!annotationText || !workspace) return;
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/workspaces/${workspace.workspaceId}/changelog/annotations`, {
+      const res = await apiFetch(`/api/workspaces/${workspace.workspaceId}/changelog/annotations`, {
          method: "POST",
          headers: { "Content-Type": "application/json" },
          body: JSON.stringify({
             targetId,
-            text: annotationText,
-            authorId: user.id,
-            authorName: user.name
+            text: annotationText
          })
       });
       if (res.ok) {
          setAnnotatingId(null);
          setAnnotationText("");
          loadData();
+      } else {
+         toastError(await errorMessage(res, "Could not add the annotation."));
       }
-    } catch(err) {}
+    } catch(err) {
+      toastError(NETWORK_ERROR);
+    }
   };
 
   const getEventIcon = (type: string) => {
@@ -167,7 +172,7 @@ export default function ChangelogPage() {
                           
                           <div className="mt-4 md:mt-0 text-xs font-semibold text-slate-400 flex items-center space-x-1.5 shrink-0">
                              <Clock className="h-3.5 w-3.5" />
-                             <span>{evt.date}</span>
+                             <span>{new Date(evt.date).toLocaleString()}</span>
                           </div>
                        </div>
                     </div>

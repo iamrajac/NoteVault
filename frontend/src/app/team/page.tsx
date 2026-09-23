@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Search, Users, Shield, User as UserIcon, X, Loader2 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
+import { apiFetch, NETWORK_ERROR } from "@/lib/api";
+import { getActiveWorkspace } from "@/lib/session";
 
 export default function TeamPage() {
   const [user, setUser] = useState<any>(null);
@@ -15,7 +17,7 @@ export default function TeamPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteName, setInviteName] = useState("");
-  const [invitePassword, setInvitePassword] = useState("");
+  const [inviteNotice, setInviteNotice] = useState("");
   const [inviteRole, setInviteRole] = useState("Employee");
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteError, setInviteError] = useState("");
@@ -31,11 +33,11 @@ export default function TeamPage() {
         
         // Find active workspace (first one for now)
         if (parsedUser.workspaces?.length > 0) {
-          const activeWs = parsedUser.workspaces[0];
+          const activeWs = getActiveWorkspace(parsedUser)!;
           setWorkspace(activeWs);
           
           try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/workspaces/${activeWs.workspaceId}/members`);
+            const res = await apiFetch(`/api/workspaces/${activeWs.workspaceId}/members`);
             if (res.ok) {
               const data = await res.json();
               setMembers(data);
@@ -57,17 +59,14 @@ export default function TeamPage() {
     setInviteError("");
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/auth/invite`, {
+      const res = await apiFetch(`/api/auth/invite`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          adminUserId: user.id,
-          adminRole: workspace.role,
           workspaceId: workspace.workspaceId,
-          newEmail: inviteEmail,
-          newName: inviteName,
-          newPassword: invitePassword,
-          newRole: inviteRole
+          email: inviteEmail,
+          name: inviteName || undefined,
+          role: inviteRole
         })
       });
 
@@ -76,18 +75,15 @@ export default function TeamPage() {
       if (!res.ok) {
         setInviteError(data.error || "Failed to invite user");
       } else {
-        // Refresh members list
-        const mRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/workspaces/${workspace.workspaceId}/members`);
-        setMembers(await mRes.json());
-        
+        // The person appears in the member list once they accept.
+        setInviteNotice(data.emailSent ? `Invitation sent to ${inviteEmail}.` : `Email could not be sent. Share this link with ${inviteEmail}: ${data.link}`);
         setIsModalOpen(false);
         setInviteEmail("");
         setInviteName("");
-        setInvitePassword("");
         setInviteRole("Employee");
       }
     } catch (error) {
-      setInviteError("Network Error. Ensure backend is running.");
+      setInviteError(NETWORK_ERROR);
     } finally {
       setInviteLoading(false);
     }
@@ -123,6 +119,13 @@ export default function TeamPage() {
             )}
           </div>
         </header>
+
+        {inviteNotice && (
+          <div className="mb-6 flex items-start justify-between gap-4 break-all rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-300">
+            <span>{inviteNotice}</span>
+            <button onClick={() => setInviteNotice("")} aria-label="Dismiss" className="shrink-0"><X className="h-4 w-4" /></button>
+          </div>
+        )}
 
         {loading ? (
           <div className="flex h-64 items-center justify-center">
@@ -191,9 +194,9 @@ export default function TeamPage() {
                 
                 <div className="space-y-4">
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Full Name</label>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Full Name (optional)</label>
                     <input 
-                      required type="text" value={inviteName} onChange={(e) => setInviteName(e.target.value)}
+                      type="text" value={inviteName} onChange={(e) => setInviteName(e.target.value)}
                       className="w-full rounded-xl border border-slate-300 bg-transparent px-4 py-2.5 text-sm outline-none transition-all focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-700" 
                       placeholder="Jane Doe" 
                     />
@@ -205,15 +208,6 @@ export default function TeamPage() {
                       required type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)}
                       className="w-full rounded-xl border border-slate-300 bg-transparent px-4 py-2.5 text-sm outline-none transition-all focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-700" 
                       placeholder="jane@notevault.app" 
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Temporary Password</label>
-                    <input 
-                      required type="password" value={invitePassword} onChange={(e) => setInvitePassword(e.target.value)}
-                      className="w-full rounded-xl border border-slate-300 bg-transparent px-4 py-2.5 text-sm outline-none transition-all focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-700" 
-                      placeholder="Ensure it is secure..." 
                     />
                   </div>
                   

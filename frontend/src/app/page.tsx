@@ -1,14 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { LayoutGrid, Mail, Lock, UserCog, Users, User, Moon } from "lucide-react";
-
+import { LayoutGrid, Mail, Lock, UserCog, Users, User } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { API_URL } from "@/lib/api";
+import { getToken, saveSession } from "@/lib/session";
+
+type Role = "Admin" | "Team Lead" | "Employee";
+
+// Only allow redirects to paths inside this app.
+const safeNext = (next: string | null) => (next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard");
 
 export default function AuthPage() {
   const router = useRouter();
-  const [role, setRole] = useState<"Admin" | "Team Lead" | "Employee">("Team Lead");
+  const [role, setRole] = useState<Role | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -17,10 +23,20 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotMessage, setForgotMessage] = useState<string | null>(null);
-  const [tempPassword, setTempPassword] = useState<string | null>(null);
+  const [next, setNext] = useState("/dashboard");
 
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5069";
-  const apiUrl = (endpoint: string) => `${API_BASE_URL}${endpoint}`;
+  const apiUrl = (endpoint: string) => `${API_URL}${endpoint}`;
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const target = safeNext(params.get("next"));
+    setNext(target);
+    if (getToken()) {
+      router.replace(target);
+      return;
+    }
+    if (params.get("expired")) setError("Your session has expired. Please log in again.");
+  }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,9 +51,9 @@ export default function AuthPage() {
 
     try {
       const endpoint = isLogin ? "/api/auth/login" : "/api/auth/register";
-      const payload = isLogin 
-        ? { email, password, role }
-        : { email, password, role, name: email.split("@")[0] };
+      const payload = isLogin
+        ? { email, password, ...(role ? { role } : {}) }
+        : { email, password, name: email.split("@")[0] };
 
       const res = await fetch(apiUrl(endpoint), {
         method: "POST",
@@ -57,15 +73,12 @@ export default function AuthPage() {
         throw new Error(data?.error || data?.message || `Authentication failed (${res.status})`);
       }
 
-      // Store token and redirect
-      localStorage.setItem("nv_token", data.token);
-      localStorage.setItem("nv_user", JSON.stringify(data.user));
-      
-      router.push("/dashboard");
+      saveSession(data.token, data.user);
+      router.push(next);
 
     } catch (err: any) {
       const message = err?.message?.includes("Failed to fetch")
-        ? `Unable to connect to the authentication server at ${API_BASE_URL}. Make sure the backend is running and the API URL is correct.`
+        ? `Can't reach the NoteVault server at ${API_URL}. Check your connection and try again.`
         : err.message;
       setError(message);
     } finally {
@@ -76,7 +89,6 @@ export default function AuthPage() {
   const handleForgotPassword = async () => {
     setError(null);
     setForgotMessage(null);
-    setTempPassword(null);
 
     if (!email) {
       setError("Please enter your email above first.");
@@ -113,10 +125,6 @@ export default function AuthPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50/50 p-4 transition-colors duration-300 dark:bg-slate-900">
-      {/* Theme Toggle placeholder */}
-      <button className="absolute right-6 top-6 rounded-full bg-white p-3 text-slate-400 shadow-sm transition hover:text-slate-600 dark:bg-slate-800 dark:text-slate-500">
-        <Moon className="h-5 w-5" />
-      </button>
 
       <div className="w-full max-w-md">
         {/* Logo */}
@@ -143,10 +151,11 @@ export default function AuthPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Role Selection */}
+            {/* Optional role: opens the first workspace where the user has this role */}
+            {isLogin && (
             <div className="space-y-3">
               <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                Select Role
+                Open as (optional)
               </label>
               <div className="grid grid-cols-3 gap-3">
                 {[
@@ -160,7 +169,8 @@ export default function AuthPage() {
                     <button
                       key={r.id}
                       type="button"
-                      onClick={() => setRole(r.id as any)}
+                      aria-pressed={isActive}
+                      onClick={() => setRole(isActive ? null : (r.id as Role))}
                       className={`flex flex-col items-center justify-center space-y-2 rounded-2xl border p-4 transition-all duration-200 ${
                         isActive
                           ? "border-blue-500 bg-blue-50/50 text-blue-600 dark:border-blue-500/50 dark:bg-blue-500/10 dark:text-blue-400"
@@ -182,6 +192,7 @@ export default function AuthPage() {
                 })}
               </div>
             </div>
+            )}
 
             {/* Email Address */}
             <div className="space-y-2">
@@ -196,6 +207,7 @@ export default function AuthPage() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email"
                   className="w-full rounded-xl border border-slate-200 bg-slate-50/50 py-3 pl-10 pr-4 text-sm text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900/50 dark:text-white dark:focus:border-blue-500 dark:focus:bg-slate-800"
                   placeholder="name@company.com"
                   required
@@ -216,6 +228,8 @@ export default function AuthPage() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  minLength={isLogin ? undefined : 8}
+                  autoComplete={isLogin ? "current-password" : "new-password"}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50/50 py-3 pl-10 pr-4 text-sm text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900/50 dark:text-white dark:focus:border-blue-500 dark:focus:bg-slate-800"
                   placeholder="••••••••"
                   required
@@ -237,6 +251,8 @@ export default function AuthPage() {
                     type="password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
+                    minLength={8}
+                    autoComplete="new-password"
                     className="w-full rounded-xl border border-slate-200 bg-slate-50/50 py-3 pl-10 pr-4 text-sm text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900/50 dark:text-white dark:focus:border-blue-500 dark:focus:bg-slate-800"
                     placeholder="Re-enter password"
                     required
@@ -287,7 +303,7 @@ export default function AuthPage() {
                 onClick={() => setIsLogin(!isLogin)}
                 className="font-medium text-blue-600 hover:underline dark:text-blue-400"
               >
-                {isLogin ? "Contact Admin" : "Sign in"}
+                {isLogin ? "Create one" : "Sign in"}
               </button>
             </p>
           </div>

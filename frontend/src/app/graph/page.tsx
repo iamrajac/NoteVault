@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { Network, ZoomIn, ZoomOut, MousePointer2 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
+import { apiFetch } from "@/lib/api";
+import { getActiveWorkspace } from "@/lib/session";
 
 export default function RelationshipGraph() {
   const [nodes, setNodes] = useState<any[]>([]);
@@ -16,7 +18,7 @@ export default function RelationshipGraph() {
     if (storedUser) {
       const parsed = JSON.parse(storedUser);
       if (parsed.workspaces?.length > 0) {
-         fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/workspaces/${parsed.workspaces[0].workspaceId}/graph`)
+         apiFetch(`/api/workspaces/${getActiveWorkspace(parsed)!.workspaceId}/graph`)
            .then(res => res.json())
            .then(data => {
               setNodes(data.nodes);

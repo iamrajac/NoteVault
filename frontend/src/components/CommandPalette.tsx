@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Search, FileText, CheckSquare, Flag, Loader2 } from "lucide-react";
+import { apiFetch } from "@/lib/api";
+import { getActiveWorkspace } from "@/lib/session";
 
 export default function CommandPalette() {
   const [isOpen, setIsOpen] = useState(false);
@@ -38,7 +40,7 @@ export default function CommandPalette() {
         if (storedUser) {
            const parsed = JSON.parse(storedUser);
            if (parsed.workspaces?.length > 0) {
-              const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/workspaces/${parsed.workspaces[0].workspaceId}/search?q=${encodeURIComponent(query)}`);
+              const res = await apiFetch(`/api/workspaces/${getActiveWorkspace(parsed)!.workspaceId}/search?q=${encodeURIComponent(query)}`);
               if (res.ok) setResults(await res.json());
            }
         }
@@ -73,7 +75,7 @@ export default function CommandPalette() {
            {!query ? (
               <div className="p-8 text-center text-sm text-slate-400">Type something to trigger a workspace search</div>
            ) : (results.notes.length === 0 && results.tasks.length === 0 && results.milestones.length === 0 && !loading) ? (
-              <div className="p-8 text-center text-sm text-slate-400">No results found for "{query}"</div>
+              <div className="p-8 text-center text-sm text-slate-400">No results found for &ldquo;{query}&rdquo;</div>
            ) : (
               <div className="space-y-4 p-2">
                  {results.notes.length > 0 && (

@@ -4,6 +4,9 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Search, FolderKanban, MoreHorizontal, Loader2, X, Users, Link as LinkIcon, Copy, CheckCircle2 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
+import { apiAction, apiFetch } from "@/lib/api";
+import { toastSuccess } from "@/lib/toast";
+import { getActiveWorkspace } from "@/lib/session";
 
 export default function ProjectsPage() {
   const [user, setUser] = useState<any>(null);
@@ -40,16 +43,16 @@ export default function ProjectsPage() {
       setUser(parsedUser);
       
       if (parsedUser.workspaces?.length > 0) {
-        const activeWs = parsedUser.workspaces[0];
+        const activeWs = getActiveWorkspace(parsedUser)!;
         setWorkspace(activeWs);
         
         try {
           // Fetch Projects based on role visibility
-          const pRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/projects/${activeWs.workspaceId}?userId=${parsedUser.id}&userRole=${activeWs.role}`);
+          const pRes = await apiFetch(`/api/projects/${activeWs.workspaceId}`);
           if (pRes.ok) setProjects(await pRes.json());
 
           // Pre-fetch workspace members for the "Add Member" dropdown
-          const mRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/workspaces/${activeWs.workspaceId}/members`);
+          const mRes = await apiFetch(`/api/workspaces/${activeWs.workspaceId}/members`);
           if (mRes.ok) setWorkspaceMembers(await mRes.json());
           
         } catch (error) {
@@ -64,27 +67,20 @@ export default function ProjectsPage() {
     e.preventDefault();
     if (!workspace || !user) return;
     
-    try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/projects`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: newProjectName,
-          description: newProjectDesc,
-          workspaceId: workspace.workspaceId,
-          userId: user.id,
-          userRole: workspace.role
-        })
-      });
+    const created = await apiAction(`/api/projects`, {
+      method: "POST",
+      body: JSON.stringify({
+        name: newProjectName,
+        description: newProjectDesc,
+        workspaceId: workspace.workspaceId
+      })
+    }, "Could not create the project.");
 
-      if (res.ok) {
-        setIsProjectModalOpen(false);
-        setNewProjectName("");
-        setNewProjectDesc("");
-        loadData(); // Refresh list
-      }
-    } catch (error) {
-      console.error(error);
+    if (created) {
+      setIsProjectModalOpen(false);
+      setNewProjectName("");
+      setNewProjectDesc("");
+      loadData(); // Refresh list
     }
   };
 
@@ -93,58 +89,41 @@ export default function ProjectsPage() {
     if (!selectedProjectId || (!selectedUserId && !inviteEmail) || !workspace) return;
     setLoading(true);
 
-    try {
-      if (inviteEmail) {
-         // Invite external by email
-         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/projects/${selectedProjectId}/invite-email`, {
-           method: "POST",
-           headers: { "Content-Type": "application/json" },
-           body: JSON.stringify({ email: inviteEmail, inviterRole: workspace.role, workspaceId: workspace.workspaceId })
-         });
-         if (res.ok) {
-           setIsMemberModalOpen(false);
-           setInviteEmail("");
-           setSelectedUserId("");
-           loadData();
-         }
-      } else {
-         // Add existing workspace member
-         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/projects/${selectedProjectId}/members`, {
-           method: "POST",
-           headers: { "Content-Type": "application/json" },
-           body: JSON.stringify({ targetUserId: selectedUserId, inviterRole: workspace.role })
-         });
-         if (res.ok) {
-           setIsMemberModalOpen(false);
-           setSelectedUserId("");
-           setInviteEmail("");
-           loadData(); // Refresh to update member counts
-         }
-      }
-    } catch (error) {
-      console.error(error);
+    if (inviteEmail) {
+       // Invite someone by email; they join the project when they accept.
+       const data = await apiAction(`/api/projects/${selectedProjectId}/invite-email`, {
+         method: "POST",
+         body: JSON.stringify({ email: inviteEmail })
+       }, "Could not send the invitation.");
+       if (data) {
+         toastSuccess(data.emailSent ? `Invitation sent to ${inviteEmail}.` : `Email could not be sent. Share this link instead: ${data.link}`);
+         setIsMemberModalOpen(false);
+         setInviteEmail("");
+         setSelectedUserId("");
+       }
+    } else {
+       // Add existing workspace member
+       const data = await apiAction(`/api/projects/${selectedProjectId}/members`, {
+         method: "POST",
+         body: JSON.stringify({ targetUserId: selectedUserId })
+       }, "Could not add the member.");
+       if (data) {
+         setIsMemberModalOpen(false);
+         setSelectedUserId("");
+         setInviteEmail("");
+       }
     }
+    // loadData() also clears the loading state.
+    await loadData();
   };
 
   const handleGenerateLink = async (projectId: string) => {
     if (!workspace) return;
-    try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/projects/${projectId}/invite-link`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          inviterRole: workspace.role,
-          workspaceId: workspace.workspaceId
-        })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setGeneratedLink(data.link);
-        setIsLinkModalOpen(true);
-        setCopiedLink(false);
-      }
-    } catch (err) {
-      console.error("Link Generation Failed");
+    const data = await apiAction(`/api/projects/${projectId}/invite-link`, { method: "POST" }, "Could not create an invite link.");
+    if (data) {
+      setGeneratedLink(data.link);
+      setIsLinkModalOpen(true);
+      setCopiedLink(false);
     }
   };
 

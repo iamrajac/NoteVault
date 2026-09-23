@@ -4,11 +4,14 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
-  Search, Bell, Plus, FolderKanban, 
+  Search, Plus, FolderKanban, 
   CheckSquare, Settings, History, Users,
   MoreHorizontal, Laptop, Loader2, Flag
 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
+import NotificationBell from "@/components/NotificationBell";
+import { apiFetch } from "@/lib/api";
+import { clearSession, getActiveWorkspace, setActiveWorkspace as persistActiveWorkspace, WORKSPACE_CHANGED_EVENT } from "@/lib/session";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -39,12 +42,21 @@ export default function DashboardPage() {
       const ws = parsedUser.workspaces || [];
       setAvailableWorkspaces(ws);
       if (ws.length > 0) {
-        setActiveWorkspace(ws[0]);
+        setActiveWorkspace(getActiveWorkspace(parsedUser));
       }
     } catch (err) {
       router.push("/");
     }
   }, [router]);
+
+  useEffect(() => {
+    const onChange = () => {
+      const current = getActiveWorkspace();
+      if (current) setActiveWorkspace(current);
+    };
+    window.addEventListener(WORKSPACE_CHANGED_EVENT, onChange);
+    return () => window.removeEventListener(WORKSPACE_CHANGED_EVENT, onChange);
+  }, []);
 
   useEffect(() => {
     if (activeWorkspace && user) {
@@ -56,14 +68,14 @@ export default function DashboardPage() {
     setLoading(true);
     try {
       // 1. Fetch Real Workspace Members Count
-      const mRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/workspaces/${activeWorkspace.workspaceId}/members`);
+      const mRes = await apiFetch(`/api/workspaces/${activeWorkspace.workspaceId}/members`);
       if (mRes.ok) {
         const mData = await mRes.json();
         setMembersCount(mData.length);
       }
 
       // 2. Fetch Real Projects Visible to User
-      const pRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/projects/${activeWorkspace.workspaceId}?userId=${user.id}&userRole=${activeWorkspace.role}`);
+      const pRes = await apiFetch(`/api/projects/${activeWorkspace.workspaceId}`);
       let loadProjects = [];
       if (pRes.ok) {
         loadProjects = await pRes.json();
@@ -72,7 +84,7 @@ export default function DashboardPage() {
 
       // 3. Fetch Tasks across all those visible projects
       if (loadProjects.length > 0) {
-        const taskPromises = loadProjects.map((p: any) => fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/tasks/${p.id}`));
+        const taskPromises = loadProjects.map((p: any) => apiFetch(`/api/tasks/${p.id}`));
         const responses = await Promise.all(taskPromises);
         let allTasks: any[] = [];
         for (const r of responses) {
@@ -90,10 +102,10 @@ export default function DashboardPage() {
         setTasks([]);
       }
       
-      const bmRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/milestones/workspace/${activeWorkspace.workspaceId}`);
+      const bmRes = await apiFetch(`/api/milestones/workspace/${activeWorkspace.workspaceId}`);
       if (bmRes.ok) setMilestones(await bmRes.json());
 
-      const activityRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/workspaces/${activeWorkspace.workspaceId}/changelog`);
+      const activityRes = await apiFetch(`/api/workspaces/${activeWorkspace.workspaceId}/changelog`);
       if (activityRes.ok) setActivityEvents(await activityRes.json());
 
     } catch (error) {
@@ -103,8 +115,7 @@ export default function DashboardPage() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("nv_token");
-    localStorage.removeItem("nv_user");
+    clearSession();
     router.push("/");
   };
 
@@ -114,6 +125,7 @@ export default function DashboardPage() {
     );
     if (membership) {
       setActiveWorkspace(membership);
+      persistActiveWorkspace(workspaceId);
     }
   };
 
@@ -183,10 +195,7 @@ export default function DashboardPage() {
                 className="w-full rounded-2xl border-none bg-white py-2 pl-10 pr-4 text-sm shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:ring-slate-700 dark:focus:ring-blue-500 transition-all"
               />
             </div>
-            <button className="relative rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300 transition-colors">
-              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500 ring-2 ring-slate-50 dark:ring-slate-900"></span>
-              <Bell className="h-5 w-5" />
-            </button>
+            <NotificationBell />
             <button
               onClick={() => router.push('/projects')}
               className="flex items-center space-x-2 rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:bg-blue-700 active:scale-95"
@@ -387,7 +396,7 @@ export default function DashboardPage() {
                                     <span className="font-semibold text-slate-900 dark:text-white">{event.author}</span> {event.action}
                                   </p>
                                   <p className="mt-1 text-base font-semibold text-slate-900 dark:text-white">{event.title}</p>
-                                  <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{event.project} • {event.date}</p>
+                                  <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{event.project} • {new Date(event.date).toLocaleString()}</p>
                                 </div>
                               </div>
                               <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">

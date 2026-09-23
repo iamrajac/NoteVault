@@ -4,6 +4,9 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Flag, Plus, Calendar, CheckCircle2, Clock, MapPin, CheckSquare, FileText, Link as LinkIcon, AlertCircle } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
+import { apiFetch, errorMessage, NETWORK_ERROR } from "@/lib/api";
+import { toastError } from "@/lib/toast";
+import { getActiveWorkspace } from "@/lib/session";
 
 export default function MilestonesPage() {
   const [workspace, setWorkspace] = useState<any>(null);
@@ -34,11 +37,11 @@ export default function MilestonesPage() {
     if (storedUser) {
       const parsed = JSON.parse(storedUser);
       if (parsed.workspaces?.length > 0) {
-        const ws = parsed.workspaces[0];
+        const ws = getActiveWorkspace(parsed)!;
         setWorkspace(ws);
         
         try {
-           const pRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/projects/${ws.workspaceId}?userId=${parsed.id}&userRole=${ws.role}`);
+           const pRes = await apiFetch(`/api/projects/${ws.workspaceId}`);
            let loadedProjects = [];
            if (pRes.ok) {
               loadedProjects = await pRes.json();
@@ -46,7 +49,7 @@ export default function MilestonesPage() {
               if (loadedProjects.length > 0) setSelectedProjectId(loadedProjects[0].id);
            }
 
-           const mRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/milestones/workspace/${ws.workspaceId}`);
+           const mRes = await apiFetch(`/api/milestones/workspace/${ws.workspaceId}`);
            if (mRes.ok) setMilestones(await mRes.json());
            
            // Fetch all tasks and notes to populate dropdowns
@@ -54,8 +57,8 @@ export default function MilestonesPage() {
            let allNotes: any[] = [];
            for(const p of loadedProjects) {
                const [tRes, nRes] = await Promise.all([
-                   fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/tasks/${p.id}`),
-                   fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/notes/project/${p.id}`)
+                   apiFetch(`/api/tasks/${p.id}`),
+                   apiFetch(`/api/notes/project/${p.id}`)
                ]);
                if(tRes.ok) allTasks = allTasks.concat(await tRes.json());
                if(nRes.ok) allNotes = allNotes.concat(await nRes.json());
@@ -75,13 +78,13 @@ export default function MilestonesPage() {
     e.preventDefault();
     if (!newName || !selectedProjectId) return;
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/milestones`, {
+      const res = await apiFetch(`/api/milestones`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: newName,
           description: newDesc,
-          dueDate: newDate,
+          dueDate: newDate ? new Date(newDate).toISOString() : null,
           projectId: selectedProjectId
         })
       });
@@ -91,26 +94,32 @@ export default function MilestonesPage() {
         setNewDesc("");
         setNewDate("");
         loadData();
+      } else {
+        toastError(await errorMessage(res, "Could not create the milestone."));
       }
-    } catch(e) {}
+    } catch(e) {
+      toastError(NETWORK_ERROR);
+    }
   };
 
   const handleComplete = async (id: string) => {
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/milestones/${id}/status`, {
+      const res = await apiFetch(`/api/milestones/${id}/status`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "Completed" })
       });
+      if (!res.ok) toastError(await errorMessage(res, "Could not complete the milestone."));
       loadData();
-    } catch(e) {}
+    } catch(e) {
+      toastError(NETWORK_ERROR);
+    }
   };
 
   const handleLinkItem = async (e: React.FormEvent, milestoneId: string) => {
      e.preventDefault();
      if (!linkTargetId) return;
      try {
-       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/milestones/${milestoneId}/items`, {
+       const res = await apiFetch(`/api/milestones/${milestoneId}/items`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ targetId: linkTargetId, targetType: linkTargetType })
@@ -119,8 +128,12 @@ export default function MilestonesPage() {
           setLinkingTo(null);
           setLinkTargetId("");
           loadData();
+       } else {
+          toastError(await errorMessage(res, "Could not link that item."));
        }
-     } catch(err) {}
+     } catch(err) {
+       toastError(NETWORK_ERROR);
+     }
   };
 
   const isLeader = workspace?.role === "Admin" || workspace?.role === "Team Lead";

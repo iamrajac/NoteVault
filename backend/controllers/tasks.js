@@ -50,8 +50,16 @@ exports.createTask = async (req, res) => {
   if (assigneeId === 'auto') {
     targetAssigneeId = await leastLoadedMember(projectId);
   } else if (assigneeId) {
-    const member = await prisma.projectMember.findUnique({ where: { projectId_userId: { projectId, userId: assigneeId } } });
-    if (!member) throw badRequest('The assignee must be a member of this project.');
+    // Any workspace member can be assigned; they're added to the project so they can see the task.
+    const inWorkspace = await prisma.workspaceMember.findUnique({
+      where: { userId_workspaceId: { userId: assigneeId, workspaceId: project.workspaceId } },
+    });
+    if (!inWorkspace) throw badRequest('The assignee must be a member of this workspace.');
+    await prisma.projectMember.upsert({
+      where: { projectId_userId: { projectId, userId: assigneeId } },
+      create: { projectId, userId: assigneeId },
+      update: {},
+    });
     targetAssigneeId = assigneeId;
   }
 

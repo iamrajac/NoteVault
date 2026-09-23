@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import CommandPalette from "@/components/CommandPalette";
+import AuthGuard from "@/components/AuthGuard";
+import Toaster from "@/components/Toaster";
 
 export const metadata: Metadata = {
   title: "NoteVault",
@@ -15,8 +17,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-         {children}
-         <CommandPalette />
+         <AuthGuard>
+           {children}
+           <CommandPalette />
+         </AuthGuard>
+         <Toaster />
       </body>
     </html>
   );

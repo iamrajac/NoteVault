@@ -124,7 +124,20 @@ test('task assignment and completion create notifications', async () => {
   }
 });
 
-test('assignees must be project members', async () => {
+test('assigning a workspace member adds them to the project', async () => {
+  const admin = await api.register('assigner');
+  const project = (await admin.post('/api/projects').send({ name: 'P', workspaceId: admin.workspaceId })).body;
+  const { token } = (await admin.post(`/api/projects/${project.id}/invite-link`)).body;
+  const other = (await admin.post('/api/projects').send({ name: 'Other', workspaceId: admin.workspaceId })).body;
+  const member = await api.register('member');
+  await member.post('/api/auth/accept-invite').send({ token }).expect(200);
+
+  await admin.post('/api/tasks').send({ projectId: other.id, name: 'T', assigneeId: member.user.id }).expect(201);
+  const visible = (await member.get(`/api/projects/${admin.workspaceId}`)).body.map((p) => p.id).sort();
+  assert.deepEqual(visible, [project.id, other.id].sort());
+});
+
+test('assignees must belong to the workspace', async () => {
   const admin = await api.register('lead');
   const outsider = await api.register('outsider');
   const project = (await admin.post('/api/projects').send({ name: 'P', workspaceId: admin.workspaceId })).body;

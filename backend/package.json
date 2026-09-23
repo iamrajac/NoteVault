@@ -8,7 +8,7 @@
     "dev": "nodemon server.js",
     "migrate": "prisma migrate deploy",
     "migrate:dev": "prisma migrate dev",
-    "test": "node --test --test-concurrency=1 test/",
+    "test": "node --test --test-concurrency=1 \"test/**/*.test.js\"",
     "lint": "eslint .",
     "postinstall": "prisma generate"
   },

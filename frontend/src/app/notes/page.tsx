@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { FileText, Plus, Search, CheckCircle2, MoreHorizontal, PenTool } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
+import { apiFetch, errorMessage, NETWORK_ERROR } from "@/lib/api";
+import { toastError } from "@/lib/toast";
+import { getActiveWorkspace } from "@/lib/session";
 
 export default function NotesIndex() {
   const router = useRouter();
@@ -27,10 +30,10 @@ export default function NotesIndex() {
         const parsed = JSON.parse(storedUser);
         setUser(parsed);
         if (parsed.workspaces?.length > 0) {
-          const ws = parsed.workspaces[0];
+          const ws = getActiveWorkspace(parsed)!;
           setWorkspace(ws);
           try {
-            const pRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/projects/${ws.workspaceId}?userId=${parsed.id}&userRole=${ws.role}`);
+            const pRes = await apiFetch(`/api/projects/${ws.workspaceId}`);
             if (pRes.ok) {
                const pData = await pRes.json();
                setProjects(pData);
@@ -50,7 +53,7 @@ export default function NotesIndex() {
 
   const fetchNotes = async () => {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/notes/project/${selectedProjectId}`);
+      const res = await apiFetch(`/api/notes/project/${selectedProjectId}`);
       if (res.ok) setNotes(await res.json());
     } catch(e) {}
   };
@@ -59,20 +62,23 @@ export default function NotesIndex() {
     e.preventDefault();
     if (!newTitle || !selectedProjectId || !user) return;
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/notes`, {
+      const res = await apiFetch(`/api/notes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: newTitle,
-          projectId: selectedProjectId,
-          authorId: user.id
+          projectId: selectedProjectId
         })
       });
       if (res.ok) {
         const newNote = await res.json();
         router.push(`/notes/${newNote.id}`);
+      } else {
+        toastError(await errorMessage(res, "Could not create the note."));
       }
-    } catch(e) {}
+    } catch(e) {
+      toastError(NETWORK_ERROR);
+    }
   };
 
   return (

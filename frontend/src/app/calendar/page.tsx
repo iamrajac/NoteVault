@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Calendar as CalendarIcon, CheckSquare, Flag, ArrowLeft, ArrowRight, Clock } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
+import { apiFetch } from "@/lib/api";
+import { getActiveWorkspace } from "@/lib/session";
 
 export default function CalendarPage() {
   const [loading, setLoading] = useState(true);
@@ -18,8 +20,8 @@ export default function CalendarPage() {
         const parsed = JSON.parse(storedUser);
         if (parsed.workspaces?.length > 0) {
            try {
-              const ws = parsed.workspaces[0];
-              const mRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/milestones/workspace/${ws.workspaceId}`);
+              const ws = getActiveWorkspace(parsed)!;
+              const mRes = await apiFetch(`/api/milestones/workspace/${ws.workspaceId}`);
               
               if (mRes.ok) {
                  const milestones = await mRes.json();

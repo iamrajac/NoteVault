@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import { Settings as SettingsIcon, Shield, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
+import { apiFetch, errorMessage, NETWORK_ERROR } from "@/lib/api";
+import { getActiveWorkspace, getUser, saveUser } from "@/lib/session";
 
 export default function SettingsPage() {
   const [workspace, setWorkspace] = useState<any>(null);
@@ -34,30 +36,42 @@ export default function SettingsPage() {
       const parsed = JSON.parse(storedUser);
       setUser(parsed);
       if (parsed.workspaces?.length > 0) {
-         setWorkspace(parsed.workspaces[0]);
-         setName(parsed.workspaces[0].workspace?.name || "");
+         setWorkspace(getActiveWorkspace(parsed)!);
+         setName(getActiveWorkspace(parsed)!.workspace?.name || "");
       }
     }
   }, []);
 
+  const [generalError, setGeneralError] = useState("");
+  const isAdmin = workspace?.role === "Admin";
+
   const handleSaveGeneral = async () => {
     if (!workspace) return;
+    setGeneralError("");
     setLoading(true);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/workspaces/${workspace.workspaceId}`, {
+      const res = await apiFetch(`/api/workspaces/${workspace.workspaceId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name })
       });
       if (res.ok) {
         const updatedWs = await res.json();
-        const storedUser = JSON.parse(localStorage.getItem("nv_user") || "{}");
-        storedUser.workspaces[0].workspace.name = updatedWs.name;
-        localStorage.setItem("nv_user", JSON.stringify(storedUser));
+        const storedUser = getUser();
+        if (storedUser) {
+          saveUser({
+            ...storedUser,
+            workspaces: storedUser.workspaces.map((w) =>
+              w.workspaceId === updatedWs.id ? { ...w, workspace: { ...w.workspace!, name: updatedWs.name } } : w
+            ),
+          });
+        }
         window.location.reload();
+      } else {
+        setGeneralError(await errorMessage(res, "Could not save workspace settings."));
       }
     } catch(e) {
-      console.error(e);
+      setGeneralError(NETWORK_ERROR);
     }
     setLoading(false);
   };
@@ -68,16 +82,20 @@ export default function SettingsPage() {
        setPassError("All fields are required.");
        return;
     }
+    if (newPassword.length < 8) {
+       setPassError("New password must be at least 8 characters.");
+       return;
+    }
     if (newPassword !== confirmPassword) {
        setPassError("New passwords do not match.");
        return;
     }
     setLoading(true);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5069'}/api/auth/password`, {
+      const res = await apiFetch(`/api/auth/password`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user.id, currentPassword, newPassword })
+        body: JSON.stringify({ currentPassword, newPassword })
       });
       const data = await res.json();
       if (!res.ok) {
@@ -130,7 +148,7 @@ export default function SettingsPage() {
                   <div className="space-y-6">
                     <div>
                       <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Workspace Name</label>
-                      <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full max-w-md rounded-xl border border-slate-300 bg-transparent px-4 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-700" />
+                      <input type="text" value={name} disabled={!isAdmin} title={isAdmin ? undefined : "Only workspace Admins can rename the workspace"} onChange={(e) => setName(e.target.value)} className="w-full max-w-md disabled:opacity-60 rounded-xl border border-slate-300 bg-transparent px-4 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-700" />
                     </div>
                     <div>
                       <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Workspace URL</label>
@@ -139,8 +157,9 @@ export default function SettingsPage() {
                         <input type="text" readOnly value={workspaceSlug} className="w-full flex-1 rounded-r-xl border-none bg-transparent py-2 pr-4 text-sm text-slate-400 outline-none cursor-not-allowed" />
                       </div>
                     </div>
-                    <div className="pt-4">
-                      <button onClick={handleSaveGeneral} disabled={loading} className="rounded-xl flex items-center space-x-2 bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50">
+                    <div className="flex items-center pt-4">
+                      {generalError && <p className="mr-4 self-center text-sm text-red-600 dark:text-red-400">{generalError}</p>}
+                      <button onClick={handleSaveGeneral} disabled={loading || !isAdmin} className="rounded-xl flex items-center space-x-2 bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50">
                         {loading && <Loader2 className="h-4 w-4 animate-spin" />}
                         <span>Save Changes</span>
                       </button>
