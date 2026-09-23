@@ -16,6 +16,8 @@ type Notification = {
 };
 
 const POLL_MS = 60_000;
+// Fired after notifications are marked read so every bell on the page refreshes.
+const CHANGED_EVENT = "nv-notifications-changed";
 
 export default function NotificationBell({ align = "right" }: { align?: "left" | "right" }) {
   const router = useRouter();
@@ -38,9 +40,11 @@ export default function NotificationBell({ align = "right" }: { align?: "left" |
     load();
     const timer = setInterval(load, POLL_MS);
     window.addEventListener(WORKSPACE_CHANGED_EVENT, load);
+    window.addEventListener(CHANGED_EVENT, load);
     return () => {
       clearInterval(timer);
       window.removeEventListener(WORKSPACE_CHANGED_EVENT, load);
+      window.removeEventListener(CHANGED_EVENT, load);
     };
   }, [load]);
 
@@ -57,7 +61,9 @@ export default function NotificationBell({ align = "right" }: { align?: "left" |
   const openItem = async (n: Notification) => {
     if (!n.isRead) {
       setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, isRead: true } : x)));
-      apiFetch(`/api/notifications/${n.id}/read`, { method: "PATCH" }).catch(() => {});
+      apiFetch(`/api/notifications/${n.id}/read`, { method: "PATCH" })
+        .then(() => window.dispatchEvent(new Event(CHANGED_EVENT)))
+        .catch(() => {});
     }
     setOpen(false);
     if (n.link) router.push(n.link);
@@ -67,7 +73,9 @@ export default function NotificationBell({ align = "right" }: { align?: "left" |
     const ws = getActiveWorkspace();
     if (!ws) return;
     setItems((prev) => prev.map((x) => ({ ...x, isRead: true })));
-    apiFetch(`/api/notifications/${ws.workspaceId}/read-all`, { method: "PATCH" }).catch(() => {});
+    apiFetch(`/api/notifications/${ws.workspaceId}/read-all`, { method: "PATCH" })
+      .then(() => window.dispatchEvent(new Event(CHANGED_EVENT)))
+      .catch(() => {});
   };
 
   return (

@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Search, Users, Shield, User as UserIcon, X, Loader2 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
-import { apiFetch, NETWORK_ERROR } from "@/lib/api";
+import { apiAction, apiFetch, NETWORK_ERROR } from "@/lib/api";
+import { saveUser, setActiveWorkspace } from "@/lib/session";
 import { getActiveWorkspace } from "@/lib/session";
 
 export default function TeamPage() {
@@ -18,6 +19,7 @@ export default function TeamPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteName, setInviteName] = useState("");
   const [inviteNotice, setInviteNotice] = useState("");
+  const [memberSearch, setMemberSearch] = useState("");
   const [inviteRole, setInviteRole] = useState("Employee");
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteError, setInviteError] = useState("");
@@ -89,6 +91,40 @@ export default function TeamPage() {
     }
   };
 
+  const isAdmin = workspace?.role === "Admin";
+  const visibleMembers = members.filter((m) =>
+    `${m.user.name || ""} ${m.user.email} ${m.role}`.toLowerCase().includes(memberSearch.trim().toLowerCase())
+  );
+
+  const handleRoleChange = async (member: any, role: string) => {
+    const updated = await apiAction(`/api/workspaces/${workspace.workspaceId}/members/${member.userId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ role }),
+    }, "Could not change the role.");
+    if (updated) setMembers((prev) => prev.map((m) => (m.userId === member.userId ? { ...m, role: updated.role } : m)));
+  };
+
+  const handleRemove = async (member: any) => {
+    const self = member.userId === user?.id;
+    const who = member.user.name || member.user.email;
+    const question = self
+      ? "Leave this workspace? You will lose access to its projects and notes."
+      : `Remove ${who} from the workspace? They lose access to all its projects, and their tasks become unassigned.`;
+    if (!window.confirm(question)) return;
+
+    const data = await apiAction(`/api/workspaces/${workspace.workspaceId}/members/${member.userId}`, { method: "DELETE" },
+      self ? "Could not leave the workspace." : "Could not remove the member.");
+    if (!data) return;
+    if (self) {
+      saveUser(data.user);
+      const next = data.user.workspaces[0]?.workspaceId;
+      if (next) setActiveWorkspace(next);
+      window.location.href = "/dashboard";
+    } else {
+      setMembers((prev) => prev.filter((m) => m.userId !== member.userId));
+    }
+  };
+
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 font-sans text-slate-900 transition-colors duration-300 dark:bg-slate-900 dark:text-slate-100 md:flex-row">
       <Sidebar activePage="Team" />
@@ -105,6 +141,9 @@ export default function TeamPage() {
               <input
                 type="text"
                 placeholder="Search active members..."
+                aria-label="Search members"
+                value={memberSearch}
+                onChange={(e) => setMemberSearch(e.target.value)}
                 className="w-full rounded-2xl border-none bg-white py-2 pl-10 pr-4 text-sm shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:ring-slate-700 dark:focus:ring-blue-500 transition-all"
               />
             </div>
@@ -134,7 +173,7 @@ export default function TeamPage() {
         ) : (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             <AnimatePresence>
-              {members.map((member, i) => (
+              {visibleMembers.map((member, i) => (
                 <motion.div 
                   key={member.id} 
                   initial={{ opacity: 0, scale: 0.95 }} 
@@ -151,12 +190,30 @@ export default function TeamPage() {
                   <p className="mb-5 text-xs text-slate-500 truncate w-full text-center">
                     {member.user.email}
                   </p>
-                  <div className="flex items-center space-x-2 rounded-full bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600 ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700">
-                    {member.role === "Admin" && <Shield className="h-3 w-3 text-purple-500" />}
-                    {member.role === "Team Lead" && <Users className="h-3 w-3 text-blue-500" />}
-                    {member.role === "Employee" && <UserIcon className="h-3 w-3 text-emerald-500" />}
-                    <span>{member.role}</span>
-                  </div>
+                  {isAdmin ? (
+                    <select
+                      value={member.role}
+                      onChange={(e) => handleRoleChange(member, e.target.value)}
+                      aria-label={`Role for ${member.user.name || member.user.email}`}
+                      className="rounded-full bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600 outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700"
+                    >
+                      <option value="Admin">Admin</option>
+                      <option value="Team Lead">Team Lead</option>
+                      <option value="Employee">Employee</option>
+                    </select>
+                  ) : (
+                    <div className="flex items-center space-x-2 rounded-full bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600 ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700">
+                      {member.role === "Admin" && <Shield className="h-3 w-3 text-purple-500" />}
+                      {member.role === "Team Lead" && <Users className="h-3 w-3 text-blue-500" />}
+                      {member.role === "Employee" && <UserIcon className="h-3 w-3 text-emerald-500" />}
+                      <span>{member.role}</span>
+                    </div>
+                  )}
+                  {(isAdmin || member.userId === user?.id) && (
+                    <button onClick={() => handleRemove(member)} className="mt-3 text-xs font-semibold text-red-600 hover:underline dark:text-red-400">
+                      {member.userId === user?.id ? "Leave workspace" : "Remove"}
+                    </button>
+                  )}
                 </motion.div>
               ))}
             </AnimatePresence>

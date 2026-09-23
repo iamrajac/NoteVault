@@ -6,6 +6,8 @@ import { Search, FileText, CheckSquare, Flag, Loader2 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { getActiveWorkspace } from "@/lib/session";
 
+export const OPEN_SEARCH_EVENT = "nv-open-search";
+
 export default function CommandPalette() {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -24,8 +26,14 @@ export default function CommandPalette() {
         setIsOpen(false);
       }
     };
+    // Other components (e.g. the dashboard search box) can open the palette.
+    const open = () => setIsOpen(true);
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener(OPEN_SEARCH_EVENT, open);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener(OPEN_SEARCH_EVENT, open);
+    };
   }, []);
 
   useEffect(() => {

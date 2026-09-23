@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Settings as SettingsIcon, Shield, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Settings as SettingsIcon, Shield, Loader2, CheckCircle2, AlertCircle, User as UserIcon } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
-import { apiFetch, errorMessage, NETWORK_ERROR } from "@/lib/api";
-import { getActiveWorkspace, getUser, saveUser } from "@/lib/session";
+import { apiAction, apiFetch, errorMessage, NETWORK_ERROR } from "@/lib/api";
+import { toastSuccess } from "@/lib/toast";
+import { getActiveWorkspace, getUser, saveUser, setActiveWorkspace } from "@/lib/session";
 
 export default function SettingsPage() {
   const [workspace, setWorkspace] = useState<any>(null);
@@ -19,22 +20,16 @@ export default function SettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passError, setPassError] = useState("");
   const [passSuccess, setPassSuccess] = useState("");
+  const [displayName, setDisplayName] = useState("");
 
-  const getWorkspaceSlug = (label: string) =>
-    label
-      .toString()
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '') || 'workspace';
 
-  const workspaceSlug = getWorkspaceSlug(workspace?.workspace?.name || name || '');
 
   useEffect(() => {
     const storedUser = localStorage.getItem("nv_user");
     if (storedUser) {
       const parsed = JSON.parse(storedUser);
       setUser(parsed);
+      setDisplayName(parsed.name || "");
       if (parsed.workspaces?.length > 0) {
          setWorkspace(getActiveWorkspace(parsed)!);
          setName(getActiveWorkspace(parsed)!.workspace?.name || "");
@@ -76,6 +71,35 @@ export default function SettingsPage() {
     setLoading(false);
   };
   
+  const handleSaveProfile = async () => {
+    if (!displayName.trim()) return;
+    setLoading(true);
+    const data = await apiAction("/api/auth/me", { method: "PATCH", body: JSON.stringify({ name: displayName }) }, "Could not save your profile.");
+    setLoading(false);
+    if (data) {
+      saveUser(data.user);
+      setUser(data.user);
+      toastSuccess("Profile saved.");
+    }
+  };
+
+  const handleDeleteWorkspace = async () => {
+    if (!workspace) return;
+    const wsName = workspace.workspace?.name || "this workspace";
+    const typed = window.prompt(`This permanently deletes "${wsName}" with all its projects, notes and tasks for everyone.\n\nType the workspace name to confirm:`);
+    if (typed === null) return;
+    if (typed.trim() !== wsName) {
+      window.alert("The name didn't match, so nothing was deleted.");
+      return;
+    }
+    const data = await apiAction(`/api/workspaces/${workspace.workspaceId}`, { method: "DELETE" }, "Could not delete the workspace.");
+    if (!data) return;
+    saveUser(data.user);
+    const next = data.user.workspaces[0]?.workspaceId;
+    if (next) setActiveWorkspace(next);
+    window.location.href = next ? "/dashboard" : "/";
+  };
+
   const handleSaveSecurity = async () => {
     setPassError(""); setPassSuccess("");
     if (!currentPassword || !newPassword || !confirmPassword) {
@@ -128,6 +152,7 @@ export default function SettingsPage() {
           <div className="space-y-2 lg:col-span-1">
             {[
               { id: "General", icon: SettingsIcon },
+              { id: "Profile", icon: UserIcon },
               { id: "Security", icon: Shield }
             ].map((tab) => (
               <button 
@@ -150,13 +175,6 @@ export default function SettingsPage() {
                       <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Workspace Name</label>
                       <input type="text" value={name} disabled={!isAdmin} title={isAdmin ? undefined : "Only workspace Admins can rename the workspace"} onChange={(e) => setName(e.target.value)} className="w-full max-w-md disabled:opacity-60 rounded-xl border border-slate-300 bg-transparent px-4 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-700" />
                     </div>
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Workspace URL</label>
-                      <div className="flex max-w-md items-center rounded-xl border border-slate-300 bg-slate-50 dark:border-slate-700 dark:bg-slate-900">
-                        <span className="pl-4 pr-2 text-sm text-slate-500">notevault.app/ws/</span>
-                        <input type="text" readOnly value={workspaceSlug} className="w-full flex-1 rounded-r-xl border-none bg-transparent py-2 pr-4 text-sm text-slate-400 outline-none cursor-not-allowed" />
-                      </div>
-                    </div>
                     <div className="flex items-center pt-4">
                       {generalError && <p className="mr-4 self-center text-sm text-red-600 dark:text-red-400">{generalError}</p>}
                       <button onClick={handleSaveGeneral} disabled={loading || !isAdmin} className="rounded-xl flex items-center space-x-2 bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50">
@@ -164,6 +182,36 @@ export default function SettingsPage() {
                         <span>Save Changes</span>
                       </button>
                     </div>
+                  </div>
+                </>
+            )}
+
+            {activeTab === "General" && isAdmin && (
+                <div className="mt-10 rounded-2xl border border-red-200 p-5 dark:border-red-900/50">
+                  <h3 className="text-sm font-bold text-red-600 dark:text-red-400">Delete workspace</h3>
+                  <p className="mt-1 text-sm text-slate-500">Permanently deletes this workspace and everything in it for all members. This cannot be undone.</p>
+                  <button onClick={handleDeleteWorkspace} className="mt-4 rounded-xl border border-red-300 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20">
+                    Delete workspace
+                  </button>
+                </div>
+            )}
+
+            {activeTab === "Profile" && (
+                <>
+                  <h2 className="mb-6 text-lg font-bold">Your Profile</h2>
+                  <div className="max-w-md space-y-6">
+                    <div>
+                      <label htmlFor="display-name" className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Display name</label>
+                      <input id="display-name" type="text" maxLength={100} value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full rounded-xl border border-slate-300 bg-transparent px-4 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-700" />
+                    </div>
+                    <div>
+                      <p className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Email</p>
+                      <p className="text-sm text-slate-500">{user?.email}</p>
+                    </div>
+                    <button onClick={handleSaveProfile} disabled={loading || !displayName.trim()} className="flex items-center space-x-2 rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50">
+                      {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+                      <span>Save Profile</span>
+                    </button>
                   </div>
                 </>
             )}

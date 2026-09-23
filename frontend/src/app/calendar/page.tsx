@@ -21,29 +21,29 @@ export default function CalendarPage() {
         if (parsed.workspaces?.length > 0) {
            try {
               const ws = getActiveWorkspace(parsed)!;
-              const mRes = await apiFetch(`/api/milestones/workspace/${ws.workspaceId}`);
-              
-              if (mRes.ok) {
-                 const milestones = await mRes.json();
-                 let flatEvents: any[] = [];
-                 
-                 milestones.forEach((m: any) => {
-                    if (m.dueDate) {
-                       flatEvents.push({
-                          id: `m_${m.id}`, type: "milestone", title: m.name, date: new Date(m.dueDate), status: m.status
-                       });
-                    }
-                    m.tasks?.forEach((t: any) => {
-                       if (t.dueDate) {
-                          flatEvents.push({
-                             id: `t_${t.id}`, type: "task", title: t.name, date: new Date(t.dueDate), status: t.status
-                          });
-                       }
-                    });
-                 });
-                 
-                 setEvents(flatEvents);
-              }
+              const [mRes, pRes] = await Promise.all([
+                apiFetch(`/api/milestones/workspace/${ws.workspaceId}`),
+                apiFetch(`/api/projects/${ws.workspaceId}`),
+              ]);
+              const milestones = mRes.ok ? await mRes.json() : [];
+              const projects = pRes.ok ? await pRes.json() : [];
+              // Every task deadline in visible projects, not just tasks attached to a milestone.
+              const taskLists = await Promise.all(
+                projects.map((p: any) => apiFetch(`/api/tasks/${p.id}`).then((r) => (r.ok ? r.json() : [])))
+              );
+
+              const flatEvents: any[] = [];
+              milestones.forEach((m: any) => {
+                if (m.dueDate) {
+                  flatEvents.push({ id: `m_${m.id}`, type: "milestone", title: m.name, date: new Date(m.dueDate), status: m.status });
+                }
+              });
+              taskLists.flat().forEach((t: any) => {
+                if (t.dueDate) {
+                  flatEvents.push({ id: `t_${t.id}`, type: "task", title: t.name, date: new Date(t.dueDate), status: t.status });
+                }
+              });
+              setEvents(flatEvents);
            } catch(e) {}
         }
       }
@@ -104,9 +104,9 @@ export default function CalendarPage() {
                 <div className="flex items-center space-x-1.5"><div className="h-3 w-3 rounded-full bg-emerald-400"></div><span>Task</span></div>
              </div>
              <div className="flex space-x-1 bg-white dark:bg-slate-800 p-1 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
-                <button onClick={prevMonth} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition"><ArrowLeft className="h-4 w-4" /></button>
+                <button onClick={prevMonth} aria-label="Previous month" className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition"><ArrowLeft className="h-4 w-4" /></button>
                 <div className="flex items-center px-4 font-bold text-sm w-36 justify-center">{monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}</div>
-                <button onClick={nextMonth} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition"><ArrowRight className="h-4 w-4" /></button>
+                <button onClick={nextMonth} aria-label="Next month" className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition"><ArrowRight className="h-4 w-4" /></button>
              </div>
           </div>
         </header>

@@ -62,6 +62,16 @@ export default function ChangelogPage() {
     }
   };
 
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("All");
+  const [authorFilter, setAuthorFilter] = useState("All");
+  const authors = Array.from(new Set(events.map((e: any) => e.author))).sort();
+  const visibleEvents = events.filter((e: any) => {
+    const q = search.trim().toLowerCase();
+    const matchesText = !q || `${e.title} ${e.action} ${e.project} ${e.author}`.toLowerCase().includes(q);
+    return matchesText && (typeFilter === "All" || e.type === typeFilter) && (authorFilter === "All" || e.author === authorFilter);
+  });
+
   const getEventIcon = (type: string) => {
     if (type === "Document") return <FileText className="h-5 w-5 text-indigo-500" />;
     if (type === "Task") return <CheckSquare className="h-5 w-5 text-emerald-500" />;
@@ -85,13 +95,27 @@ export default function ChangelogPage() {
                 Your authenticated workspace activity feed. Track everything that happens across your projects in real-time.
              </p>
           </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+           <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} aria-label="Filter by type" className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800">
+             <option value="All">All types</option>
+             <option value="Document">Notes</option>
+             <option value="Task">Tasks</option>
+           </select>
+           <select value={authorFilter} onChange={(e) => setAuthorFilter(e.target.value)} aria-label="Filter by person" className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800">
+             <option value="All">Everyone</option>
+             {authors.map((a) => <option key={a} value={a}>{a}</option>)}
+           </select>
           <div className="relative">
              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
              <input
                type="text"
+               aria-label="Search activity"
+               value={search}
+               onChange={(e) => setSearch(e.target.value)}
                placeholder="Search activity..."
                className="w-full md:w-80 rounded-xl border border-slate-300 bg-white py-2.5 pl-10 pr-4 text-sm outline-none transition-all focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800"
              />
+          </div>
           </div>
         </header>
 
@@ -106,7 +130,10 @@ export default function ChangelogPage() {
         ) : (
            <div className="relative border-l-2 border-slate-200 dark:border-slate-800 ml-4 py-4 space-y-8">
              <AnimatePresence>
-               {events.map((evt, i) => (
+               {visibleEvents.length === 0 && (
+                 <p className="pl-8 text-sm text-slate-500">No activity matches these filters.</p>
+               )}
+               {visibleEvents.map((evt, i) => (
                  <motion.div 
                    key={evt.id} 
                    initial={{ opacity: 0, x: -20 }} 

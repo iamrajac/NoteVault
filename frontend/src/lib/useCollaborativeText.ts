@@ -80,6 +80,12 @@ export function useCollaborativeText(noteId: string) {
     });
     socket.on("note-update", ({ update }: { update: ArrayBuffer }) => Y.applyUpdate(doc, new Uint8Array(update), REMOTE));
     socket.on("active-users", (count: number) => setActiveUsers(count));
+    socket.on("note-deleted", () => {
+      setStatus("error");
+      setSynced(false);
+      setError("This note was deleted by another user.");
+      socket.disconnect();
+    });
     socket.on("disconnect", () => setStatus("offline"));
     socket.on("connect_error", (err) => {
       setStatus("offline");

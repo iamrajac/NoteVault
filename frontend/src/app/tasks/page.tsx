@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Search, CheckSquare, Loader2, X, AlertCircle, User as UserIcon } from "lucide-react";
+import { Plus, Search, CheckSquare, Loader2, X, AlertCircle, User as UserIcon, Pencil, Trash2 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import { apiAction, apiFetch } from "@/lib/api";
 import { getActiveWorkspace } from "@/lib/session";
@@ -26,6 +26,8 @@ export default function TasksPage() {
   const [newTaskDifficulty, setNewTaskDifficulty] = useState("1");
   const [newTaskDate, setNewTaskDate] = useState("");
   const [newTaskAssignee, setNewTaskAssignee] = useState("auto");
+  // When set, the task modal edits this task instead of creating one.
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
 
   useEffect(() => {
     loadProjects();
@@ -81,27 +83,25 @@ export default function TasksPage() {
     if (!selectedProjectId || !workspace) return;
     
     {
-      const created = await apiAction(`/api/tasks`, {
-        method: "POST",
-        body: JSON.stringify({
-          projectId: selectedProjectId,
-          name: newTaskName,
-          description: newTaskDesc,
-          priority: newTaskPriority,
-          difficulty: newTaskDifficulty,
-          assigneeId: newTaskAssignee,
-          dueDate: newTaskDate ? new Date(newTaskDate).toISOString() : null
-        })
-      }, "Could not create the task.");
+      const fields = {
+        name: newTaskName,
+        description: newTaskDesc,
+        priority: newTaskPriority,
+        difficulty: newTaskDifficulty,
+        dueDate: newTaskDate ? new Date(newTaskDate).toISOString() : null
+      };
+      const saved = editingTaskId
+        ? await apiAction(`/api/tasks/${editingTaskId}`, {
+            method: "PATCH",
+            body: JSON.stringify({ ...fields, assigneeId: newTaskAssignee || null })
+          }, "Could not save the task.")
+        : await apiAction(`/api/tasks`, {
+            method: "POST",
+            body: JSON.stringify({ ...fields, projectId: selectedProjectId, assigneeId: newTaskAssignee })
+          }, "Could not create the task.");
 
-      if (created) {
-        setIsTaskModalOpen(false);
-        setNewTaskName("");
-        setNewTaskDesc("");
-        setNewTaskPriority("Medium");
-        setNewTaskDifficulty("1");
-        setNewTaskDate("");
-        setNewTaskAssignee("auto");
+      if (saved) {
+        closeTaskModal();
         loadTasks(selectedProjectId);
       }
     }
@@ -117,6 +117,34 @@ export default function TasksPage() {
     }, "Could not update the task.");
     // Revert the optimistic update if the server refused it.
     if (!updated) loadTasks(selectedProjectId);
+  };
+
+  const closeTaskModal = () => {
+    setIsTaskModalOpen(false);
+    setEditingTaskId(null);
+    setNewTaskName("");
+    setNewTaskDesc("");
+    setNewTaskPriority("Medium");
+    setNewTaskDifficulty("1");
+    setNewTaskDate("");
+    setNewTaskAssignee("auto");
+  };
+
+  const openEditTask = (task: any) => {
+    setEditingTaskId(task.id);
+    setNewTaskName(task.name);
+    setNewTaskDesc(task.description || "");
+    setNewTaskPriority(task.priority || "Medium");
+    setNewTaskDifficulty(String(task.difficulty || 1));
+    setNewTaskDate(task.dueDate ? new Date(task.dueDate).toISOString().slice(0, 10) : "");
+    setNewTaskAssignee(task.assignees?.[0]?.userId || "");
+    setIsTaskModalOpen(true);
+  };
+
+  const handleDeleteTask = async (task: any) => {
+    if (!window.confirm(`Delete the task "${task.name}"? This cannot be undone.`)) return;
+    const done = await apiAction(`/api/tasks/${task.id}`, { method: "DELETE" }, "Could not delete the task.");
+    if (done) setTasks((prev) => prev.filter((t) => t.id !== task.id));
   };
 
   const canCreateTasks = workspace?.role === "Admin" || workspace?.role === "Team Lead";
@@ -190,6 +218,7 @@ export default function TasksPage() {
                     <th className="pb-3 pr-4 font-medium">Assignee</th>
                     <th className="pb-3 pr-4 font-medium">Due Date</th>
                     <th className="pb-3 pr-4 font-medium">Status</th>
+                    {canCreateTasks && <th className="pb-3 pr-2 font-medium"><span className="sr-only">Actions</span></th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -260,6 +289,18 @@ export default function TasksPage() {
                             <option value="Done" className="dark:bg-slate-800">Done</option>
                           </select>
                         </td>
+                        {canCreateTasks && (
+                          <td className="py-4 pr-2">
+                            <div className="flex items-center justify-end space-x-1">
+                              <button onClick={() => openEditTask(task)} aria-label={`Edit ${task.name}`} title="Edit" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200">
+                                <Pencil className="h-4 w-4" />
+                              </button>
+                              <button onClick={() => handleDeleteTask(task)} aria-label={`Delete ${task.name}`} title="Delete" className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30">
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </td>
+                        )}
                       </motion.tr>
                     ))}
                   </AnimatePresence>
@@ -284,8 +325,8 @@ export default function TasksPage() {
               className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800"
             >
               <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 dark:border-slate-800">
-                <h2 className="text-lg font-bold">Create New Task</h2>
-                <button onClick={() => setIsTaskModalOpen(false)} className="rounded-full p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                <h2 className="text-lg font-bold">{editingTaskId ? "Edit Task" : "Create New Task"}</h2>
+                <button onClick={closeTaskModal} aria-label="Close" className="rounded-full p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                   <X className="h-5 w-5" />
                 </button>
               </div>
@@ -328,7 +369,7 @@ export default function TasksPage() {
                   <div className="flex-1">
                     <label className="mb-1.5 block text-sm font-medium">Assignee</label>
                     <select value={newTaskAssignee} onChange={(e) => setNewTaskAssignee(e.target.value)} className="w-full rounded-xl border border-slate-300 bg-transparent px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-700">
-                       <option value="auto" className="dark:bg-slate-800 font-bold text-blue-600">🌟 Auto Load-Balance</option>
+                       {!editingTaskId && <option value="auto" className="dark:bg-slate-800 font-bold text-blue-600">🌟 Auto Load-Balance</option>}
                        <option value="" className="dark:bg-slate-800">Unassigned</option>
                        {workspaceMembers.map(m => (
                           <option key={m.userId} value={m.userId} className="dark:bg-slate-800">{m.user.name || m.user.email}</option>
@@ -338,8 +379,8 @@ export default function TasksPage() {
                 </div>
 
                 <div className="mt-8 flex justify-end space-x-3 pt-4">
-                  <button type="button" onClick={() => setIsTaskModalOpen(false)} className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">Cancel</button>
-                  <button type="submit" className="rounded-xl bg-emerald-600 px-6 py-2 text-sm font-semibold text-white transition-all hover:bg-emerald-700">Create Task</button>
+                  <button type="button" onClick={closeTaskModal} className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">Cancel</button>
+                  <button type="submit" className="rounded-xl bg-emerald-600 px-6 py-2 text-sm font-semibold text-white transition-all hover:bg-emerald-700">{editingTaskId ? "Save Changes" : "Create Task"}</button>
                 </div>
               </form>
             </motion.div>

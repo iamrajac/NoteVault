@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Save, CheckCircle2, ShieldAlert, XCircle, Loader2, Tag, Plus, Link as LinkIcon, CheckSquare, History, RotateCcw, Eye, X } from "lucide-react";
-import { apiFetch, errorMessage, NETWORK_ERROR } from "@/lib/api";
+import { ArrowLeft, Save, CheckCircle2, ShieldAlert, XCircle, Loader2, Tag, Plus, Link as LinkIcon, CheckSquare, History, RotateCcw, Eye, X, Trash2 } from "lucide-react";
+import { apiAction, apiFetch, errorMessage, NETWORK_ERROR } from "@/lib/api";
 import { useCollaborativeText } from "@/lib/useCollaborativeText";
 import { getActiveWorkspace } from "@/lib/session";
 
@@ -251,6 +251,12 @@ export default function CollaborativeEditor() {
     }
   };
 
+  const handleDeleteNote = async () => {
+    if (!note || !window.confirm(`Delete "${note.title}" and its version history? This cannot be undone.`)) return;
+    const done = await apiAction(`/api/notes/${noteId}`, { method: "DELETE" }, "Could not delete the note.");
+    if (done) router.push("/notes");
+  };
+
   const handleLinkNote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newLinkedNoteId) return;
@@ -299,7 +305,7 @@ export default function CollaborativeEditor() {
       <div className="flex-1 flex flex-col overflow-hidden">
          <header className="flex h-16 items-center justify-between border-b border-slate-200 px-4 md:px-8 dark:border-slate-800 bg-white dark:bg-slate-900 z-10 shrink-0">
           <div className="flex items-center space-x-4">
-            <button onClick={() => router.push('/notes')} className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition">
+            <button onClick={() => router.push('/notes')} aria-label="Back to notes" className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition">
               <ArrowLeft className="h-5 w-5" />
             </button>
             <div>
@@ -327,9 +333,21 @@ export default function CollaborativeEditor() {
               <span className="text-xs font-semibold text-slate-400">{liveLabel}{live.status === "live" ? ` · ${live.activeUsers} online` : ""}</span>
             </div>
 
+            {(isAuthor || isApprover) && (
+              <button
+                onClick={handleDeleteNote}
+                aria-label="Delete note"
+                title="Delete note"
+                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
+
             {/* Version History Button */}
             <button 
-              onClick={() => { setShowVersionHistory(true); fetchVersions(); }} 
+              onClick={() => { setShowVersionHistory(true); fetchVersions(); }}
+              aria-label="Version history"
               className="flex items-center space-x-1 rounded-lg bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 transition hover:bg-slate-200 dark:hover:bg-slate-700"
             >
               <History className="h-3.5 w-3.5" />
@@ -356,7 +374,7 @@ export default function CollaborativeEditor() {
                </div>
             )}
 
-            <button onClick={handleManualSave} className="flex items-center space-x-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white transition hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white active:scale-95">
+            <button onClick={handleManualSave} aria-label="Save note" className="flex items-center space-x-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white transition hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white active:scale-95">
               {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               <span className="hidden md:inline">Save</span>
             </button>
@@ -419,7 +437,7 @@ export default function CollaborativeEditor() {
             {isApprover && (
                <form onSubmit={handleCreateTask} className="mt-3 flex items-center space-x-2">
                   <input type="text" value={newTaskName} onChange={e=>setNewTaskName(e.target.value)} placeholder="New task name" className="flex-1 rounded-lg border border-slate-300 bg-transparent px-3 py-1.5 text-xs outline-none focus:border-indigo-500 dark:border-slate-700" />
-                  <button type="submit" className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 p-1.5 rounded-lg hover:bg-indigo-200 transition"><Plus className="h-4 w-4" /></button>
+                  <button type="submit" aria-label="Add task" className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 p-1.5 rounded-lg hover:bg-indigo-200 transition"><Plus className="h-4 w-4" /></button>
                </form>
             )}
          </section>
@@ -447,7 +465,7 @@ export default function CollaborativeEditor() {
                         <option key={n.id} value={n.id} className="dark:bg-slate-800">{n.title}</option>
                      ))}
                   </select>
-                  <button type="submit" disabled={!newLinkedNoteId} className="bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 p-1.5 rounded-lg hover:bg-slate-300 transition disabled:opacity-50"><LinkIcon className="h-4 w-4" /></button>
+                  <button type="submit" aria-label="Link note" disabled={!newLinkedNoteId} className="bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 p-1.5 rounded-lg hover:bg-slate-300 transition disabled:opacity-50"><LinkIcon className="h-4 w-4" /></button>
                </div>
             </form>
          </section>
@@ -463,7 +481,7 @@ export default function CollaborativeEditor() {
                 <XCircle className="h-5 w-5 text-red-500 mr-2" />
                 Reject Note
               </h3>
-              <button onClick={() => setShowRejectModal(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+              <button onClick={() => setShowRejectModal(false)} aria-label="Close" className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -505,7 +523,7 @@ export default function CollaborativeEditor() {
                 <History className="h-5 w-5 text-indigo-500 mr-2" />
                 Version History
               </h3>
-              <button onClick={() => { setShowVersionHistory(false); setSelectedVersion(null); }} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+              <button onClick={() => { setShowVersionHistory(false); setSelectedVersion(null); }} aria-label="Close" className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -621,7 +639,7 @@ export default function CollaborativeEditor() {
                 <Save className="h-5 w-5 text-indigo-500 mr-2" />
                 Save Note Options
               </h3>
-              <button onClick={() => setShowSaveModal(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+              <button onClick={() => setShowSaveModal(false)} aria-label="Close" className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
                 <X className="h-5 w-5" />
               </button>
             </div>

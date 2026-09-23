@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Flag, Plus, Calendar, CheckCircle2, Clock, MapPin, CheckSquare, FileText, Link as LinkIcon, AlertCircle } from "lucide-react";
+import { Flag, Plus, Calendar, CheckCircle2, Clock, MapPin, CheckSquare, FileText, Link as LinkIcon, AlertCircle, Trash2 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
-import { apiFetch, errorMessage, NETWORK_ERROR } from "@/lib/api";
+import { apiAction, apiFetch, errorMessage, NETWORK_ERROR } from "@/lib/api";
 import { toastError } from "@/lib/toast";
 import { getActiveWorkspace } from "@/lib/session";
 
@@ -115,6 +115,12 @@ export default function MilestonesPage() {
     }
   };
 
+  const handleDelete = async (m: any) => {
+    if (!window.confirm(`Delete the milestone "${m.name}"? Its tasks and notes are kept.`)) return;
+    const done = await apiAction(`/api/milestones/${m.id}`, { method: "DELETE" }, "Could not delete the milestone.");
+    if (done) loadData();
+  };
+
   const handleLinkItem = async (e: React.FormEvent, milestoneId: string) => {
      e.preventDefault();
      if (!linkTargetId) return;
@@ -175,7 +181,7 @@ export default function MilestonesPage() {
           <div className="relative border-l-2 border-slate-200 dark:border-slate-800 ml-4 py-4 space-y-8">
              {milestones.map((m, i) => {
                const isCompleted = m.status === "Completed";
-               const isOverdue = !isCompleted && new Date(m.dueDate) < new Date();
+               const isOverdue = !isCompleted && Boolean(m.dueDate) && new Date(m.dueDate) < new Date();
                
                return (
                  <motion.div 
@@ -221,6 +227,12 @@ export default function MilestonesPage() {
                                    <button onClick={() => handleComplete(m.id)} className="flex items-center space-x-1.5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-emerald-900/20 dark:hover:text-emerald-400 dark:hover:border-emerald-800">
                                       <CheckCircle2 className="h-4 w-4" />
                                       <span>Mark Complete</span>
+                                  </button>
+                                )}
+                                {isLeader && (
+                                  <button onClick={() => handleDelete(m)} aria-label={`Delete ${m.name}`} className="flex items-center space-x-1 text-xs font-semibold text-slate-400 hover:text-red-600">
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    <span>Delete</span>
                                   </button>
                                 )}
                              </div>

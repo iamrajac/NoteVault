@@ -309,12 +309,7 @@ export default function AuthPage() {
           </div>
         </motion.div>
 
-        {/* Footer Links */}
-        <div className="mt-8 flex justify-center space-x-6 text-sm text-slate-400">
-          <a href="#" className="hover:text-slate-600 dark:hover:text-slate-300">Privacy</a>
-          <a href="#" className="hover:text-slate-600 dark:hover:text-slate-300">Terms</a>
-          <a href="#" className="hover:text-slate-600 dark:hover:text-slate-300">Help</a>
-        </div>
+        
       </div>
     </div>
   );

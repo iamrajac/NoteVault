@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import NotificationBell from "@/components/NotificationBell";
+import { OPEN_SEARCH_EVENT } from "@/components/CommandPalette";
 import { apiFetch } from "@/lib/api";
 import { clearSession, getActiveWorkspace, setActiveWorkspace as persistActiveWorkspace, WORKSPACE_CHANGED_EVENT } from "@/lib/session";
 
@@ -190,9 +191,13 @@ export default function DashboardPage() {
             <div className="relative flex-1 md:w-64">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
+                readOnly
+                onFocus={(e) => { e.currentTarget.blur(); window.dispatchEvent(new Event(OPEN_SEARCH_EVENT)); }}
+                onClick={() => window.dispatchEvent(new Event(OPEN_SEARCH_EVENT))}
+                aria-label="Search (Ctrl+K)"
                 type="text"
-                placeholder="Search anything..."
-                className="w-full rounded-2xl border-none bg-white py-2 pl-10 pr-4 text-sm shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:ring-slate-700 dark:focus:ring-blue-500 transition-all"
+                placeholder="Search anything... (Ctrl+K)"
+                className="cursor-pointer w-full rounded-2xl border-none bg-white py-2 pl-10 pr-4 text-sm shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:ring-slate-700 dark:focus:ring-blue-500 transition-all"
               />
             </div>
             <NotificationBell />
