@@ -58,13 +58,7 @@ Open http://localhost:3000 and create an account.
 
 ### Already have a database from an older version?
 
-Older versions created tables with `prisma db push`. Mark the original schema as applied once, then run the new migrations:
-
-```bash
-cd backend
-npx prisma migrate resolve --applied 0_init
-npm run migrate
-```
+Older versions created tables with `prisma db push`. `npm run migrate` detects this, marks the original schema as already applied, and runs only the new migrations. Your data is kept. Nothing to do by hand.
 
 ### Or run everything with Docker
 
@@ -114,7 +108,11 @@ NoteVault is two services and a database:
 | `SMTP_*` | yes, for email | See [Email](#email) |
 | `PORT` | no | Defaults to `5069` |
 
-The API refuses to start in production if a required variable is missing or `JWT_SECRET` is too short. The Docker image runs `prisma migrate deploy` on start. On other hosts, run `npm run migrate` as a release step.
+The API refuses to start in production if a required variable is missing or `JWT_SECRET` is too short.
+
+**Start command:** `npm run start:prod`. It applies database migrations, then starts the server (the Docker image does the same). Don't use `prisma db push` in production.
+
+**Render:** set Root Directory `backend`, Build Command `npm install`, Start Command `npm run start:prod`, plus the variables below.
 
 ### Email
 

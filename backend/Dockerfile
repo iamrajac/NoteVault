@@ -15,4 +15,4 @@ COPY . .
 USER node
 EXPOSE 5069
 # Apply pending migrations, then start the API.
-CMD ["sh", "-c", "npx prisma migrate deploy && node server.js"]
+CMD ["npm", "run", "start:prod"]
