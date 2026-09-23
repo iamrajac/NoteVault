@@ -1,43 +1,32 @@
 const prisma = require('../utils/db');
-
-exports.pushNotification = async ({ userId, workspaceId, title, message, link }) => {
-  try {
-    await prisma.notification.create({
-      data: { userId, workspaceId, title, message, link }
-    });
-  } catch(e) {
-    console.error('Push Notification Error:', e);
-  }
-};
+const { requireWorkspaceMember } = require('../utils/access');
+const { notFound } = require('../utils/errors');
 
 exports.getNotifications = async (req, res) => {
-  try {
-    const { userId } = req.query; // assuming passed as query or decoded from JWT
-    const { workspaceId } = req.params;
+  const { workspaceId } = req.params;
+  await requireWorkspaceMember(req.user.id, workspaceId);
 
-    if (!userId) return res.status(400).json({ error: "userId required" });
-
-    const notifications = await prisma.notification.findMany({
-      where: { userId, workspaceId },
-      orderBy: { createdAt: 'desc' },
-      take: 20
-    });
-
-    res.json(notifications);
-  } catch(e) {
-    res.status(500).json({ error: "Server Error" });
-  }
+  const notifications = await prisma.notification.findMany({
+    where: { userId: req.user.id, OR: [{ workspaceId }, { workspaceId: null }] },
+    orderBy: { createdAt: 'desc' },
+    take: 30,
+  });
+  res.json(notifications);
 };
 
 exports.markAsRead = async (req, res) => {
-  try {
-    const { id } = req.params;
-    await prisma.notification.update({
-      where: { id },
-      data: { isRead: true }
-    });
-    res.json({ success: true });
-  } catch(e) {
-    res.status(500).json({ error: "Server Error" });
-  }
+  // updateMany scoped to the caller, so nobody can mark someone else's notifications.
+  const { count } = await prisma.notification.updateMany({
+    where: { id: req.params.id, userId: req.user.id },
+    data: { isRead: true },
+  });
+  if (count === 0) throw notFound('Notification not found');
+  res.json({ success: true });
+};
+
+exports.markAllAsRead = async (req, res) => {
+  const { workspaceId } = req.params;
+  await requireWorkspaceMember(req.user.id, workspaceId);
+  await prisma.notification.updateMany({ where: { userId: req.user.id, workspaceId, isRead: false }, data: { isRead: true } });
+  res.json({ success: true });
 };

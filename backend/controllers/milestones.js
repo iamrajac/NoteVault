@@ -1,107 +1,69 @@
 const prisma = require('../utils/db');
+const {
+  requireProjectAccess,
+  requireMilestoneAccess,
+  requireWorkspaceMember,
+  visibleProjectsWhere,
+} = require('../utils/access');
+const { badRequest, notFound } = require('../utils/errors');
 
 exports.createMilestone = async (req, res) => {
-  try {
-    const { name, description, dueDate, projectId } = req.body;
-    
-    if (!name || !projectId) {
-      return res.status(400).json({ error: "Name and projectId are required." });
-    }
+  const { name, description, dueDate, projectId } = req.body;
+  await requireProjectAccess(req.user.id, projectId, { managerOnly: true });
 
-    const milestone = await prisma.milestone.create({
-      data: {
-        name,
-        description,
-        dueDate: dueDate ? new Date(dueDate) : null,
-        projectId,
-        status: "Active"
-      }
-    });
-
-    res.status(201).json(milestone);
-  } catch (error) {
-    console.error('Create Milestone Error:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
+  const milestone = await prisma.milestone.create({
+    data: { name, description, dueDate: dueDate ?? null, projectId, status: 'Active' },
+  });
+  res.status(201).json(milestone);
 };
 
 exports.getProjectMilestones = async (req, res) => {
-  try {
-    const { projectId } = req.params;
-    
-    const milestones = await prisma.milestone.findMany({
-      where: { projectId },
-      orderBy: { dueDate: 'asc' }
-    });
-
-    res.json(milestones);
-  } catch (error) {
-    console.error('Fetch Milestones Error:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
+  const { project } = await requireProjectAccess(req.user.id, req.params.projectId);
+  const milestones = await prisma.milestone.findMany({ where: { projectId: project.id }, orderBy: { dueDate: 'asc' } });
+  res.json(milestones);
 };
 
 exports.getWorkspaceMilestones = async (req, res) => {
-  try {
-    const { workspaceId } = req.params;
-    
-    const milestones = await prisma.milestone.findMany({
-      where: { project: { workspaceId } },
-      include: {
-        project: { select: { name: true } },
-        tasks: true,
-        notes: true
-      },
-      orderBy: { dueDate: 'asc' }
-    });
+  const { workspaceId } = req.params;
+  const role = await requireWorkspaceMember(req.user.id, workspaceId);
 
-    res.json(milestones);
-  } catch (error) {
-    console.error('Fetch Workspace Milestones Error:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
+  const milestones = await prisma.milestone.findMany({
+    where: { project: visibleProjectsWhere(req.user.id, workspaceId, role) },
+    include: {
+      project: { select: { name: true } },
+      tasks: true,
+      notes: { select: { id: true, title: true, status: true, projectId: true } },
+    },
+    orderBy: { dueDate: 'asc' },
+  });
+  res.json(milestones);
 };
 
 exports.updateMilestoneStatus = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body;
-    
-    const updated = await prisma.milestone.update({
-      where: { id },
-      data: { status }
-    });
-
-    res.json(updated);
-  } catch (error) {
-    console.error('Update Milestone Error:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
+  const { milestone } = await requireMilestoneAccess(req.user.id, req.params.id, { managerOnly: true });
+  const updated = await prisma.milestone.update({ where: { id: milestone.id }, data: { status: req.body.status } });
+  res.json(updated);
 };
 
 exports.getMilestoneItems = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const tasks = await prisma.task.findMany({ where: { milestoneId: id } });
-    const notes = await prisma.note.findMany({ where: { milestoneId: id } });
-    res.json({ tasks, notes });
-  } catch(e) {
-    res.status(500).json({error: "Server Error"});
-  }
+  const { milestone } = await requireMilestoneAccess(req.user.id, req.params.id);
+  const [tasks, notes] = await Promise.all([
+    prisma.task.findMany({ where: { milestoneId: milestone.id } }),
+    prisma.note.findMany({ where: { milestoneId: milestone.id }, select: { id: true, title: true, status: true, projectId: true } }),
+  ]);
+  res.json({ tasks, notes });
 };
 
+// Attach a task or note to a milestone. Both must be in the same project.
 exports.linkItem = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { targetId, targetType } = req.body;
-    if (targetType === 'task') {
-       await prisma.task.update({ where: { id: targetId }, data: { milestoneId: id } });
-    } else {
-       await prisma.note.update({ where: { id: targetId }, data: { milestoneId: id } });
-    }
-    res.json({ success: true });
-  } catch(e) {
-    res.status(500).json({error: "Server Error"});
-  }
-};
+  const { milestone } = await requireMilestoneAccess(req.user.id, req.params.id, { managerOnly: true });
+  const { targetId, targetType } = req.body;
 
+  const model = targetType === 'task' ? prisma.task : prisma.note;
+  const item = await model.findUnique({ where: { id: targetId }, select: { projectId: true } });
+  if (!item) throw notFound(`${targetType === 'task' ? 'Task' : 'Note'} not found`);
+  if (item.projectId !== milestone.projectId) throw badRequest('Only items from the same project can be linked to this milestone.');
+
+  await model.update({ where: { id: targetId }, data: { milestoneId: milestone.id } });
+  res.json({ success: true });
+};

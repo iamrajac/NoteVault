@@ -1,389 +1,254 @@
 const prisma = require('../utils/db');
+const { requireProjectAccess, requireNoteAccess, isManager, publicUserSelect } = require('../utils/access');
+const { badRequest, forbidden, notFound, conflict } = require('../utils/errors');
+const { notify, workspaceManagerIds } = require('../utils/notify');
+const collab = require('../realtime/collab');
+
+const AUTO_TAGS = ['api', 'auth', 'schema', 'backend', 'frontend', 'bug', 'feature', 'deployment'];
+
+// yState is internal collaborative-editing data; never send it to clients.
+const noteFields = {
+  id: true,
+  title: true,
+  content: true,
+  status: true,
+  tags: true,
+  rejectionReason: true,
+  projectId: true,
+  authorId: true,
+  approverId: true,
+  milestoneId: true,
+  createdAt: true,
+  updatedAt: true,
+};
+
+const autoTags = (title, content) => {
+  const text = `${title} ${content || ''}`.toLowerCase();
+  return AUTO_TAGS.filter((t) => text.includes(t)).join(',');
+};
+
+// Creates the next version number for a note. Retries if two saves race for the same number.
+async function createVersion(noteId, data) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const latest = await prisma.noteVersion.findFirst({ where: { noteId }, orderBy: { version: 'desc' } });
+    try {
+      return await prisma.noteVersion.create({ data: { noteId, version: (latest?.version || 0) + 1, ...data } });
+    } catch (err) {
+      if (err.code !== 'P2002') throw err;
+    }
+  }
+  throw conflict('Could not save a new version because of concurrent edits. Please try again.');
+}
+
+const logEdit = (noteId, userId, action, details) =>
+  prisma.noteEditLog.create({ data: { noteId, userId, action, details: details ? JSON.stringify(details) : null } });
 
 exports.createNote = async (req, res) => {
-  try {
-    const { title, content, projectId, authorId } = req.body;
-    
-    if (!title || !projectId || !authorId) {
-      return res.status(400).json({ error: "Missing required fields" });
-    }
+  const { title, content = '', projectId } = req.body;
+  await requireProjectAccess(req.user.id, projectId);
 
-    // Intelligent auto-tagging
-    const textBody = (title + " " + (content || "")).toLowerCase();
-    const possibleTags = ["api", "auth", "schema", "backend", "frontend", "bug", "feature", "deployment"];
-    const tagsFound = possibleTags.filter(t => textBody.includes(t));
-
-    const note = await prisma.note.create({
-      data: {
-        title,
-        content: content || "",
-        projectId,
-        authorId,
-        status: "Draft",
-        tags: tagsFound.join(",")
-      }
-    });
-
-    res.status(201).json(note);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal Server Error" });
-  }
+  const note = await prisma.note.create({
+    data: { title, content, projectId, authorId: req.user.id, status: 'Draft', tags: autoTags(title, content) },
+    select: noteFields,
+  });
+  res.status(201).json(note);
 };
 
 exports.getProjectNotes = async (req, res) => {
-  try {
-    const { projectId } = req.params;
-    
-    const notes = await prisma.note.findMany({
-      where: { projectId },
-      include: {
-        author: { select: { id: true, name: true, email: true } },
-        approver: { select: { id: true, name: true, email: true } },
-      },
-      orderBy: { updatedAt: 'desc' }
-    });
-
-    res.json(notes);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal Server Error" });
-  }
+  const { project } = await requireProjectAccess(req.user.id, req.params.projectId);
+  const notes = await prisma.note.findMany({
+    where: { projectId: project.id },
+    select: { ...noteFields, author: { select: publicUserSelect }, approver: { select: publicUserSelect } },
+    orderBy: { updatedAt: 'desc' },
+  });
+  res.json(notes);
 };
 
 exports.getNoteById = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const note = await prisma.note.findUnique({
-      where: { id },
-      include: { 
-        author: { select: { id: true, name: true } },
-        tasks: true,
-        linksOut: { include: { target: true } }
-      }
-    });
-    
-    if (!note) return res.status(404).json({ error: "Note not found" });
-    res.json(note);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal Server Error" });
-  }
+  await requireNoteAccess(req.user.id, req.params.id);
+  const note = await prisma.note.findUnique({
+    where: { id: req.params.id },
+    select: {
+      ...noteFields,
+      author: { select: { id: true, name: true } },
+      tasks: true,
+      linksOut: { include: { target: { select: { id: true, title: true, projectId: true, status: true } } } },
+    },
+  });
+  res.json(note);
 };
 
+// Status workflow:
+//  - author or manager: Draft <-> Pending Review ("submit for approval" / "withdraw")
+//  - managers only: Approved / Rejected
 exports.updateNoteStatus = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status, approverId, rejectionReason } = req.body;
-    
-    // Get current note to check if we need to create a version
-    const currentNote = await prisma.note.findUnique({ where: { id } });
-    if (!currentNote) {
-      return res.status(404).json({ error: "Note not found" });
-    }
+  const { note, project, role } = await requireNoteAccess(req.user.id, req.params.id);
+  const { status, rejectionReason } = req.body;
+  const isAuthor = note.authorId === req.user.id;
 
-    // If rejecting, create a version snapshot before updating status
-    if (status === "Rejected") {
-      // Get the latest version number
-      const latestVersion = await prisma.noteVersion.findFirst({
-        where: { noteId: id },
-        orderBy: { version: 'desc' }
-      });
-      const newVersion = (latestVersion?.version || 0) + 1;
-
-      // Create version snapshot with rejection reason
-      await prisma.noteVersion.create({
-        data: {
-          noteId: id,
-          version: newVersion,
-          title: currentNote.title,
-          tags: currentNote.tags,
-          content: currentNote.content,
-          rejectionReason: rejectionReason || "No reason provided",
-          authorId: currentNote.authorId
-        }
-      });
-
-      // Log the rejection
-      await prisma.noteEditLog.create({
-        data: {
-          noteId: id,
-          userId: approverId,
-          action: 'status_changed',
-          details: JSON.stringify({ 
-            from: currentNote.status, 
-            to: 'Rejected', 
-            reason: rejectionReason 
-          })
-        }
-      });
-    }
-
-    // Simple RBAC or Approval Workflow updates
-    const updated = await prisma.note.update({
-      where: { id },
-      data: { 
-        status, 
-        approverId: approverId || null,
-        rejectionReason: status === "Rejected" ? rejectionReason : null
-      }
-    });
-
-    res.json(updated);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal Server Error" });
+  if (['Approved', 'Rejected'].includes(status)) {
+    if (!isManager(role)) throw forbidden('Only Admins and Team Leads can approve or reject notes.');
+    if (status === 'Rejected' && !rejectionReason) throw badRequest('A rejection reason is required.');
+  } else if (!isAuthor && !isManager(role)) {
+    throw forbidden('Only the author or a Team Lead/Admin can change this note’s status.');
   }
+
+  if (status === 'Rejected') {
+    // Keep a snapshot of exactly what was rejected.
+    await createVersion(note.id, {
+      title: note.title,
+      tags: note.tags,
+      content: note.content,
+      rejectionReason,
+      authorId: note.authorId,
+    });
+  }
+
+  const updated = await prisma.note.update({
+    where: { id: note.id },
+    data: {
+      status,
+      approverId: status === 'Approved' ? req.user.id : status === 'Rejected' ? req.user.id : null,
+      rejectionReason: status === 'Rejected' ? rejectionReason : null,
+    },
+    select: noteFields,
+  });
+  await logEdit(note.id, req.user.id, 'status_changed', { from: note.status, to: status, reason: rejectionReason || undefined });
+
+  const link = `/notes/${note.id}`;
+  if (status === 'Pending Review' && note.status !== 'Pending Review') {
+    await notify(await workspaceManagerIds(project.workspaceId), {
+      workspaceId: project.workspaceId,
+      title: 'Note awaiting approval',
+      message: `"${note.title}" in ${project.name} was submitted for review.`,
+      link,
+      excludeUserId: req.user.id,
+    });
+  } else if (status === 'Approved' || status === 'Rejected') {
+    await notify([note.authorId], {
+      workspaceId: project.workspaceId,
+      title: status === 'Approved' ? 'Note approved' : 'Note rejected',
+      message:
+        status === 'Approved'
+          ? `"${note.title}" was approved by ${req.user.name || req.user.email}.`
+          : `"${note.title}" was rejected: ${rejectionReason}`,
+      link,
+      excludeUserId: req.user.id,
+    });
+  }
+
+  res.json(updated);
 };
 
+// Manual save: updates title/tags/content and records a version snapshot of the content.
 exports.updateNote = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { title, content, tags, userId, saveToVersion, versionNumber } = req.body;
-    
-    // Get current note
-    const currentNote = await prisma.note.findUnique({ where: { id } });
-    if (!currentNote) {
-      return res.status(404).json({ error: "Note not found" });
+  const { note } = await requireNoteAccess(req.user.id, req.params.id);
+  const { title, content, tags, saveToVersion, versionNumber } = req.body;
+
+  const data = {};
+  if (title !== undefined) data.title = title;
+  if (tags !== undefined) data.tags = tags;
+  if (content !== undefined) data.content = content;
+
+  if (content !== undefined) {
+    const snapshot = {
+      title: title ?? note.title,
+      tags: tags ?? note.tags,
+      content,
+      authorId: req.user.id,
+    };
+    const latest = await prisma.noteVersion.findFirst({ where: { noteId: note.id }, orderBy: { version: 'desc' } });
+
+    if (saveToVersion && versionNumber) {
+      const existing = await prisma.noteVersion.findUnique({ where: { noteId_version: { noteId: note.id, version: versionNumber } } });
+      if (!existing) throw notFound(`Version ${versionNumber} does not exist`);
+      await prisma.noteVersion.update({ where: { id: existing.id }, data: snapshot });
+    } else if (!latest || latest.content !== content || latest.title !== snapshot.title) {
+      // Live edits are autosaved to the note continuously, so compare with the last version rather than the note.
+      await createVersion(note.id, snapshot);
     }
 
-    const data = {};
-    if (title !== undefined) data.title = title;
-    if (content !== undefined) data.content = content;
-    if (tags !== undefined) data.tags = tags;
-
-    // Create version snapshot if content changed
-    if (content !== undefined && content !== currentNote.content) {
-      if (saveToVersion && versionNumber) {
-        // Update existing version
-        const existingVersion = await prisma.noteVersion.findFirst({
-          where: { noteId: id, version: parseInt(versionNumber) }
-        });
-        
-        if (existingVersion) {
-          await prisma.noteVersion.update({
-            where: { id: existingVersion.id },
-            data: {
-              title: title || currentNote.title,
-              tags: tags !== undefined ? tags : currentNote.tags,
-              content: content,
-              authorId: userId || null
-            }
-          });
-        } else {
-          // Version doesn't exist, create new one
-          const latestVersion = await prisma.noteVersion.findFirst({
-            where: { noteId: id },
-            orderBy: { version: 'desc' }
-          });
-          const newVersion = (latestVersion?.version || 0) + 1;
-          
-          await prisma.noteVersion.create({
-            data: {
-              noteId: id,
-              version: newVersion,
-              title: title || currentNote.title,
-              tags: tags !== undefined ? tags : currentNote.tags,
-              content: content,
-              authorId: userId || null
-            }
-          });
-        }
-      } else {
-        // Create new version
-        const latestVersion = await prisma.noteVersion.findFirst({
-          where: { noteId: id },
-          orderBy: { version: 'desc' }
-        });
-        const newVersion = (latestVersion?.version || 0) + 1;
-
-        await prisma.noteVersion.create({
-          data: {
-            noteId: id,
-            version: newVersion,
-            title: title || currentNote.title,
-            tags: tags !== undefined ? tags : currentNote.tags,
-            content: content,
-            authorId: userId || null
-          }
-        });
-      }
-      
-      // Log the update
-      await prisma.noteEditLog.create({
-        data: {
-          noteId: id,
-          userId: userId || 'unknown',
-          action: 'updated',
-          details: JSON.stringify({ 
-            saveToVersion: saveToVersion,
-            versionNumber: versionNumber,
-            savedBy: userId
-          })
-        }
-      });
-    }
-
-    const updated = await prisma.note.update({
-      where: { id },
-      data
-    });
-
-    res.json(updated);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal Server Error" });
+    await logEdit(note.id, req.user.id, 'updated', { saveToVersion: Boolean(saveToVersion), versionNumber: versionNumber ?? undefined });
   }
+
+  const updated = await prisma.note.update({ where: { id: note.id }, data, select: noteFields });
+  if (content !== undefined) await collab.replaceContent(note.id, content);
+  res.json(updated);
 };
 
 exports.linkNote = async (req, res) => {
+  const { note, project } = await requireNoteAccess(req.user.id, req.params.id);
+  const { targetId } = req.body;
+  if (targetId === note.id) throw badRequest('A note cannot link to itself.');
+
+  const { project: targetProject } = await requireNoteAccess(req.user.id, targetId);
+  if (targetProject.workspaceId !== project.workspaceId) throw badRequest('Notes can only be linked within the same workspace.');
+
   try {
-    const { id } = req.params;
-    const { targetId } = req.body;
-    const link = await prisma.noteLink.create({ data: { sourceId: id, targetId } });
-    res.json(link);
-  } catch(e) {
-    res.status(500).json({error: "Server Error"});
+    const link = await prisma.noteLink.create({
+      data: { sourceId: note.id, targetId },
+      include: { target: { select: { id: true, title: true, projectId: true, status: true } } },
+    });
+    await logEdit(note.id, req.user.id, 'linked', { targetId });
+    res.status(201).json(link);
+  } catch (err) {
+    if (err.code === 'P2002') throw conflict('These notes are already linked.');
+    throw err;
   }
 };
 
-// Get version history for a note
 exports.getNoteVersions = async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    const versions = await prisma.noteVersion.findMany({
-      where: { noteId: id },
-      orderBy: { version: 'desc' },
-      include: {
-        author: { select: { id: true, name: true, email: true } }
-      }
-    });
-
-    res.json(versions);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal Server Error" });
-  }
+  const { note } = await requireNoteAccess(req.user.id, req.params.id);
+  const versions = await prisma.noteVersion.findMany({
+    where: { noteId: note.id },
+    orderBy: { version: 'desc' },
+    include: { author: { select: publicUserSelect } },
+  });
+  res.json(versions);
 };
 
-// Get specific version details
 exports.getNoteVersion = async (req, res) => {
-  try {
-    const { id, versionId } = req.params;
-    
-    const version = await prisma.noteVersion.findFirst({
-      where: { 
-        noteId: id,
-        id: versionId
-      },
-      include: {
-        author: { select: { id: true, name: true, email: true } }
-      }
-    });
-
-    if (!version) {
-      return res.status(404).json({ error: "Version not found" });
-    }
-
-    res.json(version);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal Server Error" });
-  }
+  const { note } = await requireNoteAccess(req.user.id, req.params.id);
+  const version = await prisma.noteVersion.findFirst({
+    where: { noteId: note.id, id: req.params.versionId },
+    include: { author: { select: publicUserSelect } },
+  });
+  if (!version) throw notFound('Version not found');
+  res.json(version);
 };
 
-// Restore note to a specific version
 exports.restoreNoteVersion = async (req, res) => {
-  try {
-    const { id, versionId } = req.params;
-    const { userId } = req.body;
-    
-    // Get the version to restore
-    const version = await prisma.noteVersion.findFirst({
-      where: { 
-        noteId: id,
-        id: versionId
-      }
-    });
+  const { note } = await requireNoteAccess(req.user.id, req.params.id);
+  const version = await prisma.noteVersion.findFirst({ where: { noteId: note.id, id: req.params.versionId } });
+  if (!version) throw notFound('Version not found');
 
-    if (!version) {
-      return res.status(404).json({ error: "Version not found" });
-    }
+  // Snapshot the current state first so the restore can itself be undone.
+  await createVersion(note.id, { title: note.title, tags: note.tags, content: note.content, authorId: req.user.id });
 
-    // Get current note state
-    const currentNote = await prisma.note.findUnique({ where: { id } });
-    if (!currentNote) {
-      return res.status(404).json({ error: "Note not found" });
-    }
+  const restored = await prisma.note.update({
+    where: { id: note.id },
+    data: {
+      title: version.title ?? note.title,
+      tags: version.tags ?? note.tags,
+      content: version.content,
+      status: 'Draft',
+      rejectionReason: null,
+      approverId: null,
+    },
+    select: noteFields,
+  });
+  await logEdit(note.id, req.user.id, 'restored', { restoredFromVersion: version.version });
+  await collab.replaceContent(note.id, version.content);
 
-    // Create a new version with current state before restoring
-    const latestVersion = await prisma.noteVersion.findFirst({
-      where: { noteId: id },
-      orderBy: { version: 'desc' }
-    });
-    const newVersionNum = (latestVersion?.version || 0) + 1;
-
-    await prisma.noteVersion.create({
-      data: {
-        noteId: id,
-        version: newVersionNum,
-        title: currentNote.title,
-        tags: currentNote.tags,
-        content: currentNote.content,
-        rejectionReason: null,
-        authorId: userId || currentNote.authorId
-      }
-    });
-
-    // Restore to the selected version
-    const restored = await prisma.note.update({
-      where: { id },
-      data: {
-        title: version.title,
-        tags: version.tags,
-        content: version.content,
-        status: "Draft", // Reset to Draft after restore
-        rejectionReason: null
-      }
-    });
-
-    // Log the restore action
-    await prisma.noteEditLog.create({
-      data: {
-        noteId: id,
-        userId: userId,
-        action: 'restored',
-        details: JSON.stringify({ 
-          restoredFromVersion: version.version 
-        })
-      }
-    });
-
-    res.json(restored);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal Server Error" });
-  }
+  res.json(restored);
 };
 
-// Get edit logs for a note
 exports.getNoteEditLogs = async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    const logs = await prisma.noteEditLog.findMany({
-      where: { noteId: id },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        user: { select: { id: true, name: true, email: true } }
-      }
-    });
-
-    res.json(logs);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal Server Error" });
-  }
+  const { note } = await requireNoteAccess(req.user.id, req.params.id);
+  const logs = await prisma.noteEditLog.findMany({
+    where: { noteId: note.id },
+    orderBy: { createdAt: 'desc' },
+    include: { user: { select: publicUserSelect } },
+  });
+  res.json(logs);
 };
-

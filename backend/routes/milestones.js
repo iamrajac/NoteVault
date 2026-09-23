@@ -1,13 +1,17 @@
 const express = require('express');
+const controller = require('../controllers/milestones');
+const { validate } = require('../middleware/validate');
+const { wrapController } = require('../utils/errors');
+const schemas = require('../validation/schemas').milestones;
+
+const c = wrapController(controller);
 const router = express.Router();
-const milestonesController = require('../controllers/milestones');
 
-router.post('/', milestonesController.createMilestone);
-router.get('/project/:projectId', milestonesController.getProjectMilestones);
-router.get('/workspace/:workspaceId', milestonesController.getWorkspaceMilestones);
-router.patch('/:id/status', milestonesController.updateMilestoneStatus);
-
-router.get('/:id/items', milestonesController.getMilestoneItems);
-router.post('/:id/items', milestonesController.linkItem);
+router.post('/', validate(schemas.create), c.createMilestone);
+router.get('/project/:projectId', c.getProjectMilestones);
+router.get('/workspace/:workspaceId', c.getWorkspaceMilestones);
+router.patch('/:id/status', validate(schemas.updateStatus), c.updateMilestoneStatus);
+router.get('/:id/items', c.getMilestoneItems);
+router.post('/:id/items', validate(schemas.linkItem), c.linkItem);
 
 module.exports = router;

@@ -1,134 +1,111 @@
 const prisma = require('../utils/db');
+const { requireProjectAccess, requireTaskAccess, isManager, publicUserSelect } = require('../utils/access');
+const { badRequest, forbidden } = require('../utils/errors');
+const { notify, workspaceManagerIds } = require('../utils/notify');
 
-const mapPriorityToMultiplier = (priority) => {
-  switch(priority) {
-    case 'Critical': return 4;
-    case 'High': return 3;
-    case 'Medium': return 2;
-    case 'Low': return 1;
-    default: return 2;
-  }
-};
+const PRIORITY_WEIGHT = { Critical: 4, High: 3, Medium: 2, Low: 1 };
 
-// Team Leads can create tasks inside their assigned projects
-exports.createTask = async (req, res) => {
-  try {
-    const { projectId, name, description, priority, difficulty, dueDate, userRole, noteId, assigneeId } = req.body;
+const taskInclude = { assignees: { include: { user: { select: publicUserSelect } } } };
 
-    if (!projectId || !name || !userRole) {
-      return res.status(400).json({ error: 'Missing required task fields' });
-    }
-
-    if (userRole === 'Employee') {
-      return res.status(403).json({ error: 'Employees are not authorized to create tasks.' });
-    }
-
-    let targetAssigneeId = null;
-
-    // Load Balancing Algorithmic Routing
-    if (assigneeId === 'auto') {
-      const members = await prisma.projectMember.findMany({
-        where: { projectId },
-        include: {
-          user: {
-            include: {
-              tasks: {
-                where: { task: { projectId, status: { not: 'Done' } } },
-                include: { task: true }
-              }
-            }
-          }
-        }
-      });
-
-      if (members.length > 0) {
-        let minScore = Infinity;
-        for (const member of members) {
-          let score = 0;
-          for (const tAssignee of member.user.tasks) {
-            score += (tAssignee.task.difficulty || 1) * mapPriorityToMultiplier(tAssignee.task.priority);
-          }
-          if (score < minScore) {
-            minScore = score;
-            targetAssigneeId = member.userId;
-          }
-        }
-      }
-    } else if (assigneeId) {
-      targetAssigneeId = assigneeId;
-    }
-
-    const task = await prisma.task.create({
-      data: {
-        name,
-        description,
-        priority: priority || 'Medium',
-        difficulty: parseInt(difficulty, 10) || 1,
-        dueDate: dueDate ? new Date(dueDate) : null,
-        projectId,
-        noteId: noteId || null,
-        assignees: targetAssigneeId ? {
-          create: { userId: targetAssigneeId }
-        } : undefined
+// Picks the project member with the lowest open workload (difficulty x priority of unfinished tasks).
+async function leastLoadedMember(projectId) {
+  const members = await prisma.projectMember.findMany({
+    where: { projectId },
+    include: {
+      user: {
+        select: {
+          id: true,
+          tasks: { where: { task: { projectId, status: { not: 'Done' } } }, include: { task: true } },
+        },
       },
-      include: {
-        assignees: {
-          include: { user: true }
-        }
-      }
-    });
+    },
+  });
 
-    res.status(201).json(task);
-  } catch (error) {
-    console.error('Task Creation Error:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
-};
-
-// Employees (and above) can update task status (To Do -> Doing -> Done)
-exports.updateTaskStatus = async (req, res) => {
-  try {
-    const { taskId } = req.params;
-    const { status, userId } = req.body;
-
-    // Validate the status
-    const allowedStatuses = ['To Do', 'In Progress', 'Done'];
-    if (!allowedStatuses.includes(status)) {
-      return res.status(400).json({ error: 'Invalid status' });
+  let best = null;
+  let bestScore = Infinity;
+  for (const member of members) {
+    const score = member.user.tasks.reduce(
+      (sum, a) => sum + (a.task.difficulty || 1) * (PRIORITY_WEIGHT[a.task.priority] || 2),
+      0
+    );
+    if (score < bestScore) {
+      bestScore = score;
+      best = member.userId;
     }
-
-    // Role Enforcement: Verify the user is an assignee of the task OR a Team Lead / Admin of the project.
-    // In a full implementation, you'd fetch the task, project members, and verify auth dynamically.
-    // Since employees can only update tasks, we implicitly allow it here assuming frontend enforces assignee tracking.
-
-    const updatedTask = await prisma.task.update({
-      where: { id: taskId },
-      data: { status }
-    });
-
-    res.json(updatedTask);
-  } catch (error) {
-    if (error.code === 'P2025') return res.status(404).json({ error: 'Task not found' });
-    console.error('Task Update Error:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
   }
-};
-
-// Get all tasks for a specific project
-exports.getTasks = async (req, res) => {
-    try {
-        const { projectId } = req.params;
-        const tasks = await prisma.task.findMany({
-            where: { projectId },
-            include: { 
-              assignees: {
-                include: { user: true }
-              } 
-            }
-        });
-        res.json(tasks);
-    } catch (error) {
-        console.error('Fetch tasks Error:', error);
-        res.status(500).json({ error: 'Internal Server Error' });
-    }
+  return best;
 }
+
+// Admins and Team Leads create tasks.
+exports.createTask = async (req, res) => {
+  const { projectId, name, description, priority, difficulty, dueDate, noteId, assigneeId } = req.body;
+  const { project } = await requireProjectAccess(req.user.id, projectId, { managerOnly: true });
+
+  if (noteId) {
+    const note = await prisma.note.findUnique({ where: { id: noteId }, select: { projectId: true } });
+    if (!note || note.projectId !== projectId) throw badRequest('That note does not belong to this project.');
+  }
+
+  let targetAssigneeId = null;
+  if (assigneeId === 'auto') {
+    targetAssigneeId = await leastLoadedMember(projectId);
+  } else if (assigneeId) {
+    const member = await prisma.projectMember.findUnique({ where: { projectId_userId: { projectId, userId: assigneeId } } });
+    if (!member) throw badRequest('The assignee must be a member of this project.');
+    targetAssigneeId = assigneeId;
+  }
+
+  const task = await prisma.task.create({
+    data: {
+      name,
+      description,
+      priority: priority || 'Medium',
+      difficulty: difficulty || 1,
+      dueDate: dueDate ?? null,
+      projectId,
+      noteId: noteId || null,
+      assignees: targetAssigneeId ? { create: { userId: targetAssigneeId } } : undefined,
+    },
+    include: taskInclude,
+  });
+
+  if (targetAssigneeId) {
+    await notify([targetAssigneeId], {
+      workspaceId: project.workspaceId,
+      title: 'New task assigned',
+      message: `You were assigned "${task.name}" in ${project.name}.`,
+      link: '/tasks',
+      excludeUserId: req.user.id,
+    });
+  }
+
+  res.status(201).json(task);
+};
+
+// Assignees and managers can move a task between statuses.
+exports.updateTaskStatus = async (req, res) => {
+  const { task, project, role } = await requireTaskAccess(req.user.id, req.params.taskId);
+  const isAssignee = task.assignees.some((a) => a.userId === req.user.id);
+  if (!isManager(role) && !isAssignee) throw forbidden('Only the assignee or a Team Lead/Admin can update this task.');
+
+  const { status } = req.body;
+  const updated = await prisma.task.update({ where: { id: task.id }, data: { status }, include: taskInclude });
+
+  if (status === 'Done' && task.status !== 'Done') {
+    await notify([...(await workspaceManagerIds(project.workspaceId)), ...task.assignees.map((a) => a.userId)], {
+      workspaceId: project.workspaceId,
+      title: 'Task completed',
+      message: `"${task.name}" in ${project.name} was marked as done by ${req.user.name || req.user.email}.`,
+      link: '/tasks',
+      excludeUserId: req.user.id,
+    });
+  }
+
+  res.json(updated);
+};
+
+exports.getTasks = async (req, res) => {
+  const { project } = await requireProjectAccess(req.user.id, req.params.projectId);
+  const tasks = await prisma.task.findMany({ where: { projectId: project.id }, include: taskInclude, orderBy: { createdAt: 'asc' } });
+  res.json(tasks);
+};

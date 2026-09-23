@@ -1,35 +1,52 @@
 const nodemailer = require('nodemailer');
+const config = require('../config');
 
-// Ensure you set SMTP_EMAIL and SMTP_APP_PASSWORD in backend/.env
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.SMTP_EMAIL,       // e.g., 'your.gmail@gmail.com'
-    pass: process.env.SMTP_APP_PASSWORD // e.g., 'abcd efgh ijkl mnop' (16 character App Password)
-  }
-});
+const smtpConfigured = Boolean(config.smtp.email && config.smtp.appPassword);
+
+const transporter = smtpConfigured
+  ? nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: config.smtp.email, pass: config.smtp.appPassword },
+    })
+  : null;
+
+// Escape user-supplied text before putting it in email HTML.
+const escapeHtml = (value) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+// Sent emails are recorded here in tests so they can be asserted on.
+const sentEmails = [];
+
+exports.escapeHtml = escapeHtml;
+exports.sentEmails = sentEmails;
 
 exports.sendEmail = async ({ to, subject, text, html }) => {
-  try {
-    // If SMTP details aren't set up yet, gracefully log and skip to prevent app crashing
-    if (!process.env.SMTP_EMAIL || !process.env.SMTP_APP_PASSWORD) {
-      console.warn('⚠️ SMTP_EMAIL or SMTP_APP_PASSWORD not set in .env. Mocking email delivery instead.');
-      console.log(`\n--- MOCK EMAIL --- \nTo: ${to}\nSubject: ${subject}\nText: ${text}\n------------------\n`);
-      return true;
+  if (config.isTest) {
+    sentEmails.push({ to, subject, text, html });
+    return true;
+  }
+
+  if (!transporter) {
+    if (config.isProduction) {
+      console.error(`[mail] SMTP is not configured; could not send "${subject}" to ${to}.`);
+      return false;
     }
+    // Local development without SMTP: print the email so links can be copied from the terminal.
+    console.warn('[mail] SMTP_EMAIL / SMTP_APP_PASSWORD not set. Printing email instead of sending it.');
+    console.log(`\n--- EMAIL ---\nTo: ${to}\nSubject: ${subject}\n\n${text}\n-------------\n`);
+    return true;
+  }
 
-    const info = await transporter.sendMail({
-      from: `"NoteVault" <${process.env.SMTP_EMAIL}>`,
-      to,
-      subject,
-      text,
-      html
-    });
-
-    console.log(`Email sent successfully to ${to}: ${info.messageId}`);
+  try {
+    await transporter.sendMail({ from: `"NoteVault" <${config.smtp.email}>`, to, subject, text, html });
     return true;
   } catch (error) {
-    console.error('Email Delivery Error:', error);
+    console.error('[mail] Delivery error:', error.message);
     return false;
   }
 };

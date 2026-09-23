@@ -1,8 +1,12 @@
 const express = require('express');
-const router = express.Router();
-const notificationController = require('../controllers/notifications');
+const controller = require('../controllers/notifications');
+const { wrapController } = require('../utils/errors');
 
-router.get('/:workspaceId', notificationController.getNotifications);
-router.patch('/:id/read', notificationController.markAsRead);
+const c = wrapController(controller);
+const router = express.Router();
+
+router.get('/:workspaceId', c.getNotifications);
+router.patch('/:workspaceId/read-all', c.markAllAsRead);
+router.patch('/:id/read', c.markAsRead);
 
 module.exports = router;

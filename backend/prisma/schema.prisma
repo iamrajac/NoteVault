@@ -1,9 +1,8 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// Prisma schema for NoteVault.
+// Change it, then run `npm run migrate:dev -- --name <change>` to create a migration.
 
 generator client {
-  provider   = "prisma-client-js"
-  engineType = "binary"
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -12,20 +11,23 @@ datasource db {
 }
 
 model User {
-  id            String            @id @default(uuid())
-  email         String            @unique
-  password      String
-  name          String?
-  workspaces    WorkspaceMember[]
-  projects      ProjectMember[] // User is a member of projects
-  tasks         TaskAssignee[]
-  notes         Note[]            // Notes authored by the user
-  approvedNotes Note[]            @relation("NoteApprover")
-  noteVersions   NoteVersion[] @relation("NoteVersionAuthor")
-  noteEditLogs   NoteEditLog[] // Notes approved by the user
-  notifications Notification[]
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  id                  String                @id @default(uuid())
+  email               String                @unique
+  password            String
+  name                String?
+  workspaces          WorkspaceMember[]
+  projects            ProjectMember[]
+  tasks               TaskAssignee[]
+  notes               Note[]
+  approvedNotes       Note[]                @relation("NoteApprover")
+  noteVersions        NoteVersion[]         @relation("NoteVersionAuthor")
+  noteEditLogs        NoteEditLog[]
+  notifications       Notification[]
+  passwordResetTokens PasswordResetToken[]
+  invitationsSent     Invitation[]          @relation("InvitationInviter")
+  annotations         ChangelogAnnotation[]
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
 }
 
 model Workspace {
@@ -36,15 +38,17 @@ model Workspace {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  members  WorkspaceMember[]
-  projects Project[]
+  members     WorkspaceMember[]
+  projects    Project[]
+  invitations Invitation[]
+  annotations ChangelogAnnotation[]
 }
 
 model WorkspaceMember {
   id          String @id @default(cuid())
   userId      String
   workspaceId String
-  role        String // e.g., 'Admin', 'Team Lead', 'Employee'
+  role        String // 'Admin', 'Team Lead', 'Employee'
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -53,20 +57,20 @@ model WorkspaceMember {
 }
 
 model Project {
-  id          String          @id @default(uuid())
+  id          String   @id @default(uuid())
   name        String
   description String?
   workspaceId String
-  createdById String // The user who created the project
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  // createdBy   User            @relation("ProjectCreator", fields: [createdById], references: [id]) // Removed as per diff
   members     ProjectMember[]
   tasks       Task[]
   notes       Note[]
   milestones  Milestone[]
+  invitations Invitation[]
 }
 
 model ProjectMember {
@@ -75,32 +79,35 @@ model ProjectMember {
   userId    String
   createdAt DateTime @default(now())
 
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, userId])
 }
 
 model Task {
-  id          String   @id @default(cuid())
-  name        String
-  description String?  @db.Text
-  status      String   @default("To Do") // To Do, In Progress, Done
-  priority    String   @default("Medium") // Low, Medium, High, Critical
-  difficulty  Int      @default(1) // 1-5 Difficulty Rating
-  dueDate     DateTime?
-  projectId   String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             String    @id @default(cuid())
+  name           String
+  description    String?   @db.Text
+  status         String    @default("To Do") // To Do, In Progress, Done
+  priority       String    @default("Medium") // Low, Medium, High, Critical
+  difficulty     Int       @default(1) // 1-5
+  dueDate        DateTime?
+  reminderSentAt DateTime?
+  projectId      String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  assignees   TaskAssignee[]
+  project   Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignees TaskAssignee[]
 
   milestoneId String?
-  milestone   Milestone? @relation(fields: [milestoneId], references: [id])
-  
-  noteId      String?
-  sourceNote  Note?      @relation("NoteTasks", fields: [noteId], references: [id])
+  milestone   Milestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+
+  noteId     String?
+  sourceNote Note?   @relation("NoteTasks", fields: [noteId], references: [id], onDelete: SetNull)
+
+  @@index([dueDate, status])
 }
 
 model TaskAssignee {
@@ -109,49 +116,50 @@ model TaskAssignee {
   userId    String
   createdAt DateTime @default(now())
 
-  task      Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([taskId, userId])
 }
 
 model Note {
-  id              String   @id @default(uuid())
+  id              String  @id @default(uuid())
   title           String
-  content         String   @db.LongText
-  status          String   @default("Draft") // Draft, Pending Review, Approved, Rejected
-  tags            String   @default("") // Comma-separated tags
-  rejectionReason String?  @db.Text // Reason when note is rejected
-  
-  projectId       String
-  project         Project  @relation(fields: [projectId], references: [id])
-  
-  authorId    String
-  author      User     @relation(fields: [authorId], references: [id])
-  
-  approverId  String?
-  approver    User?    @relation("NoteApprover", fields: [approverId], references: [id])
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  content         String  @db.LongText
+  // Collaborative editing state (encoded Yjs document). Null until the note is first edited live.
+  yState          Bytes?  @db.LongBlob
+  status          String  @default("Draft") // Draft, Pending Review, Approved, Rejected
+  tags            String  @default("") // Comma-separated tags
+  rejectionReason String? @db.Text
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  approverId String?
+  approver   User?   @relation("NoteApprover", fields: [approverId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   milestoneId String?
-  milestone   Milestone? @relation(fields: [milestoneId], references: [id])
-  
-  tasks       Task[]     @relation("NoteTasks")
-  linksOut    NoteLink[] @relation("SourceLinks")
-  linksIn     NoteLink[] @relation("TargetLinks")
-  versions    NoteVersion[]
-  editLogs    NoteEditLog[]
-  taggedEntities NoteTag[]
+  milestone   Milestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+
+  tasks    Task[]        @relation("NoteTasks")
+  linksOut NoteLink[]    @relation("SourceLinks")
+  linksIn  NoteLink[]    @relation("TargetLinks")
+  versions NoteVersion[]
+  editLogs NoteEditLog[]
 }
 
 model NoteLink {
   id       String @id @default(uuid())
   sourceId String
   targetId String
-  source   Note @relation("SourceLinks", fields: [sourceId], references: [id], onDelete: Cascade)
-  target   Note @relation("TargetLinks", fields: [targetId], references: [id], onDelete: Cascade)
+  source   Note   @relation("SourceLinks", fields: [sourceId], references: [id], onDelete: Cascade)
+  target   Note   @relation("TargetLinks", fields: [targetId], references: [id], onDelete: Cascade)
 
   @@unique([sourceId, targetId])
 }
@@ -163,42 +171,46 @@ model NoteVersion {
   title           String?
   tags            String?
   content         String   @db.LongText
-  rejectionReason String?  @db.Text // Reason if this version was rejected
+  rejectionReason String?  @db.Text
   createdAt       DateTime @default(now())
-  
-  note            Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
-  author          User?    @relation("NoteVersionAuthor", fields: [authorId], references: [id])
-  authorId        String?
-  
+
+  note     Note    @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  author   User?   @relation("NoteVersionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  authorId String?
+
   @@unique([noteId, version])
 }
 
 model ChangelogAnnotation {
   id          String   @id @default(uuid())
-  targetId    String   // e.g., "note-123" or "task-456"
+  targetId    String // e.g. "note-123" or "task-456"
   workspaceId String
   text        String   @db.Text
   authorId    String
   authorName  String?
   createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, targetId])
 }
 
-
 model Milestone {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   name        String
   description String?
   dueDate     DateTime?
-  status      String   @default("Active") // Active, Completed
-  
-  projectId   String
-  project     Project  @relation(fields: [projectId], references: [id])
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  status      String    @default("Active") // Active, Completed
 
-  tasks       Task[]
-  notes       Note[]
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tasks Task[]
+  notes Note[]
 }
 
 model Notification {
@@ -211,33 +223,50 @@ model Notification {
   link        String?
   createdAt   DateTime @default(now())
 
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, workspaceId, createdAt])
 }
 
 model NoteEditLog {
-  id          String   @id @default(uuid())
-  noteId      String
-  userId      String
-  action      String   // 'created', 'updated', 'status_changed', 'linked', 'unlinked', 'tagged', 'untagged'
-  details     String?  @db.Text // JSON string with change details
-  createdAt   DateTime @default(now())
-  
-  note        Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model NoteTag {
   id        String   @id @default(uuid())
   noteId    String
-  version   Int      @default(1)
-  title     String?
-  tags      String?
-  entityType String  // 'note', 'task', 'milestone'
-  entityId  String
+  userId    String
+  action    String // 'updated', 'status_changed', 'restored', 'linked'
+  details   String?  @db.Text // JSON string with change details
   createdAt DateTime @default(now())
-  
-  note      Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
-  @@unique([noteId, version])
 
-  @@unique([noteId, entityType, entityId])
+  note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// One-time password reset links. Only the SHA-256 hash of the token is stored.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Invitations to a workspace (and optionally a project).
+// Email invites are bound to one address and single-use; shareable links (email = null) work until they expire.
+model Invitation {
+  id          String    @id @default(uuid())
+  tokenHash   String    @unique
+  workspaceId String
+  projectId   String?
+  email       String?
+  role        String    @default("Employee")
+  invitedById String
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project   Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  invitedBy User      @relation("InvitationInviter", fields: [invitedById], references: [id], onDelete: Cascade)
 }

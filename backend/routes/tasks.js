@@ -1,14 +1,14 @@
 const express = require('express');
+const controller = require('../controllers/tasks');
+const { validate } = require('../middleware/validate');
+const { wrapController } = require('../utils/errors');
+const schemas = require('../validation/schemas').tasks;
+
+const c = wrapController(controller);
 const router = express.Router();
-const tasksController = require('../controllers/tasks');
 
-// Create a new task (Team Lead/Admin)
-router.post('/', tasksController.createTask);
-
-// Update task status (Employees/Team Lead/Admin)
-router.patch('/:taskId/status', tasksController.updateTaskStatus);
-
-// Get tasks for a project
-router.get('/:projectId', tasksController.getTasks);
+router.post('/', validate(schemas.create), c.createTask);
+router.patch('/:taskId/status', validate(schemas.updateStatus), c.updateTaskStatus);
+router.get('/:projectId', c.getTasks);
 
 module.exports = router;

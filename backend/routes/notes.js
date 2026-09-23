@@ -1,31 +1,21 @@
 const express = require('express');
+const controller = require('../controllers/notes');
+const { validate } = require('../middleware/validate');
+const { wrapController } = require('../utils/errors');
+const schemas = require('../validation/schemas').notes;
+
+const c = wrapController(controller);
 const router = express.Router();
-const notesController = require('../controllers/notes');
 
-// Create a new note
-router.post('/', notesController.createNote);
-
-// Get all notes for a specific project
-router.get('/project/:projectId', notesController.getProjectNotes);
-
-// Get a single note by ID
-router.get('/:id', notesController.getNoteById);
-
-// Update note metadata/content
-router.patch('/:id', notesController.updateNote);
-
-// Update note status (Approval Workflow)
-router.patch('/:id/status', notesController.updateNoteStatus);
-
-// Link two notes
-router.post('/:id/links', notesController.linkNote);
-
-// Version history endpoints
-router.get('/:id/versions', notesController.getNoteVersions);
-router.get('/:id/versions/:versionId', notesController.getNoteVersion);
-router.post('/:id/versions/:versionId/restore', notesController.restoreNoteVersion);
-
-// Get edit logs for a note
-router.get('/:id/logs', notesController.getNoteEditLogs);
+router.post('/', validate(schemas.create), c.createNote);
+router.get('/project/:projectId', c.getProjectNotes);
+router.get('/:id', c.getNoteById);
+router.patch('/:id', validate(schemas.update), c.updateNote);
+router.patch('/:id/status', validate(schemas.updateStatus), c.updateNoteStatus);
+router.post('/:id/links', validate(schemas.link), c.linkNote);
+router.get('/:id/versions', c.getNoteVersions);
+router.get('/:id/versions/:versionId', c.getNoteVersion);
+router.post('/:id/versions/:versionId/restore', c.restoreNoteVersion);
+router.get('/:id/logs', c.getNoteEditLogs);
 
 module.exports = router;
