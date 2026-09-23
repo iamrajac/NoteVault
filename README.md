@@ -21,8 +21,8 @@ Follow these steps if you have just cloned the repository and are running NoteVa
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/heysuhas/sepmnotevault.git
-cd sepmnotevault
+git clone https://github.com/iamrajac/NoteVault.git
+cd NoteVault
 ```
 
 ### 2. Configure the Backend & Database
