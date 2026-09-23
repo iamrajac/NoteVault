@@ -56,7 +56,9 @@ test('login works with and without a role and rejects wrong passwords', async ()
   await api.request().post('/api/auth/register').send({ email: 'login@example.com', password: 'password123' }).expect(201);
   await api.request().post('/api/auth/login').send({ email: 'login@example.com', password: 'password123' }).expect(200);
   await api.request().post('/api/auth/login').send({ email: 'login@example.com', password: 'password123', role: 'Admin' }).expect(200);
-  await api.request().post('/api/auth/login').send({ email: 'login@example.com', password: 'password123', role: 'Employee' }).expect(403);
+  // A role the user doesn't have doesn't block login; it just opens their first workspace.
+  const other = await api.request().post('/api/auth/login').send({ email: 'login@example.com', password: 'password123', role: 'Employee' }).expect(200);
+  assert.equal(other.body.user.role, 'Admin');
   await api.request().post('/api/auth/login').send({ email: 'login@example.com', password: 'wrong-password' }).expect(401);
   await api.request().post('/api/auth/login').send({ email: 'nobody@example.com', password: 'password123' }).expect(401);
 });
@@ -285,6 +287,22 @@ test('workspaces can be created, renamed, switched and deleted', async () => {
   assert.ok(me.workspaces.some((w) => w.workspace.name === 'Renamed'));
   const afterDelete = (await user.delete(`/api/workspaces/${created.workspace.id}`).expect(200)).body.user;
   assert.equal(afterDelete.workspaces.length, 1);
+});
+
+test('people without any workspace can still log in and accept an invitation', async () => {
+  const owner = await api.register('owner');
+  const loner = await api.register('loner');
+  await loner.delete(`/api/workspaces/${loner.workspaceId}`).expect(200);
+
+  const login = await api.request().post('/api/auth/login').send({ email: loner.user.email, password: 'password123', role: 'Team Lead' }).expect(200);
+  assert.deepEqual(login.body.user.workspaces, []);
+  assert.equal(login.body.user.activeWorkspaceId, null);
+
+  await owner.post('/api/auth/invite').send({ workspaceId: owner.workspaceId, email: loner.user.email, role: 'Team Lead' }).expect(201);
+  const { lastLinkTo } = require('./helpers');
+  const token = lastLinkTo(api.sentEmails, loner.user.email).searchParams.get('token');
+  const accepted = await api.withAuth(login.body.token, login.body.user).post('/api/auth/accept-invite').send({ token }).expect(200);
+  assert.equal(accepted.body.user.workspaces[0].role, 'Team Lead');
 });
 
 test('changelog annotations use the logged-in author', async () => {

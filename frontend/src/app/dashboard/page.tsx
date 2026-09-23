@@ -11,8 +11,47 @@ import {
 import Sidebar from "@/components/Sidebar";
 import NotificationBell from "@/components/NotificationBell";
 import { OPEN_SEARCH_EVENT } from "@/components/CommandPalette";
-import { apiFetch } from "@/lib/api";
-import { clearSession, getActiveWorkspace, setActiveWorkspace as persistActiveWorkspace, WORKSPACE_CHANGED_EVENT } from "@/lib/session";
+import { apiAction, apiFetch } from "@/lib/api";
+import { clearSession, getActiveWorkspace, saveUser, setActiveWorkspace as persistActiveWorkspace, WORKSPACE_CHANGED_EVENT } from "@/lib/session";
+
+// Shown when the account isn't in any workspace (e.g. its workspace was deleted).
+function NoWorkspace() {
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const create = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setBusy(true);
+    const data = await apiAction("/api/workspaces", { method: "POST", body: JSON.stringify({ name }) }, "Could not create the workspace.");
+    setBusy(false);
+    if (!data) return;
+    saveUser(data.user);
+    persistActiveWorkspace(data.workspace.id);
+    window.location.reload();
+  };
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4 dark:bg-slate-900">
+      <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-xl ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
+        <h1 className="text-xl font-bold text-slate-900 dark:text-white">You&apos;re not in a workspace yet</h1>
+        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+          If someone invited you, open the invitation link from your email. Or create your own workspace and invite your team.
+        </p>
+        <form onSubmit={create} className="mt-6 space-y-3">
+          <label htmlFor="new-ws" className="block text-sm font-medium text-slate-700 dark:text-slate-300">Workspace name</label>
+          <input id="new-ws" value={name} onChange={(e) => setName(e.target.value)} maxLength={191} placeholder="e.g. Acme Team" className="w-full rounded-xl border border-slate-300 bg-transparent px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:text-white" />
+          <button type="submit" disabled={busy || !name.trim()} className="w-full rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+            {busy ? "Creating…" : "Create workspace"}
+          </button>
+        </form>
+        <button onClick={() => { clearSession(); window.location.href = "/"; }} className="mt-4 w-full text-center text-sm text-slate-500 hover:underline">
+          Log out
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -147,6 +186,10 @@ export default function DashboardPage() {
   ].sort((a,b) => a.date.getTime() - b.date.getTime());
   
   const upcomingEvents = allEvents.filter(e => e.date >= today && e.date <= nextWeek);
+
+  if (user && availableWorkspaces.length === 0) {
+    return <NoWorkspace />;
+  }
 
   if (!user || !activeWorkspace) {
     return (

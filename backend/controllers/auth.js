@@ -63,13 +63,10 @@ exports.login = async (req, res) => {
   const valid = await bcrypt.compare(password, user ? user.password : DUMMY_HASH);
   if (!user || !valid) throw unauthorized('Invalid email or password');
 
-  const session = await sessionUser(user.id, role);
-  if (role && session.role !== role) {
-    const roles = [...new Set(session.workspaces.map((w) => w.role))];
-    throw forbidden(`You do not have ${role} access in any workspace. Your roles: ${roles.join(', ') || 'none'}.`);
-  }
-
-  res.json({ token: signAccessToken(user.id), user: session });
+  // The role only chooses which workspace opens first; it never blocks login. Permissions are
+  // checked per workspace on every request, and people without any workspace must still be able
+  // to log in (e.g. to accept an invitation).
+  res.json({ token: signAccessToken(user.id), user: await sessionUser(user.id, role) });
 };
 
 exports.me = async (req, res) => {

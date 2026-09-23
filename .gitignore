@@ -43,3 +43,7 @@ yarn-error.log*
 # prisma databases (sqlite)
 **/*.db
 **/*.db-journal
+
+# Duplicate copies created by iCloud Drive sync (e.g. "Dockerfile 2", "app 2.js")
+* 2
+* 2.*
