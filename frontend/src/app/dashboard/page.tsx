@@ -64,7 +64,8 @@ export default function DashboardPage() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [milestones, setMilestones] = useState<any[]>([]);
   const [activityEvents, setActivityEvents] = useState<any[]>([]);
-  const [membersCount, setMembersCount] = useState<number>(1);
+  const [members, setMembers] = useState<any[]>([]);
+  const membersCount = members.length;
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -111,7 +112,7 @@ export default function DashboardPage() {
       const mRes = await apiFetch(`/api/workspaces/${activeWorkspace.workspaceId}/members`);
       if (mRes.ok) {
         const mData = await mRes.json();
-        setMembersCount(mData.length);
+        setMembers(mData);
       }
 
       // 2. Fetch Real Projects Visible to User
@@ -310,11 +311,14 @@ export default function DashboardPage() {
                 </div>
                 <div className="flex items-center space-x-2">
                   <div className="flex -space-x-3">
-                    {[1,2,3].map((i) => (
-                      <div key={i} className={`flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-xs font-medium dark:border-slate-800 dark:bg-slate-700 ${i > membersCount ? 'hidden' : ''}`}>
-                        U{i}
-                      </div>
-                    ))}
+                    {members.slice(0, 4).map((m: any) => {
+                      const label = m.user.name || m.user.email;
+                      return (
+                        <div key={m.userId} title={label} className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-xs font-medium uppercase dark:border-slate-800 dark:bg-slate-700">
+                          {label.charAt(0)}
+                        </div>
+                      );
+                    })}
                   </div>
                   <span className="text-xs font-medium text-slate-500">Total: {membersCount}</span>
                 </div>
