@@ -36,7 +36,7 @@ Edit `backend/.env`:
 
 - `DATABASE_URL`: your MySQL connection string.
 - `JWT_SECRET`: at least 32 random characters. To generate one, run `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`.
-- `SMTP_EMAIL` / `SMTP_APP_PASSWORD`: a Gmail address and [App Password](https://myaccount.google.com/apppasswords). Optional locally: without them, emails (invites, password resets) are printed in the backend terminal so you can copy the links.
+- Email settings (optional locally): without them, emails (invites, password resets) are printed in the backend terminal so you can copy the links. See [Email](#email) for the options.
 
 Create the tables and start the API on http://localhost:5069:
 
@@ -111,10 +111,31 @@ NoteVault is two services and a database:
 | `FRONTEND_URL` | yes | `https://notevault.example.com` (used in email links and as the allowed CORS origin) |
 | `CORS_ORIGINS` | no | Extra comma-separated origins |
 | `TRUST_PROXY` | behind a proxy | `1` on Railway, Render, Fly and similar hosts |
-| `SMTP_EMAIL`, `SMTP_APP_PASSWORD` | yes, for email | Gmail address and App Password |
+| `SMTP_*` | yes, for email | See [Email](#email) |
 | `PORT` | no | Defaults to `5069` |
 
 The API refuses to start in production if a required variable is missing or `JWT_SECRET` is too short. The Docker image runs `prisma migrate deploy` on start. On other hosts, run `npm run migrate` as a release step.
+
+### Email
+
+Invitations and password resets are sent by email. **Without email settings, password reset does not work in production** (invites still work, since the Admin can copy the invite link).
+
+**Option A: Gmail.** Easiest; about 500 emails a day. Create a Gmail account for the app, turn on 2-step verification, create an [App Password](https://myaccount.google.com/apppasswords), then set:
+
+```
+SMTP_EMAIL=notevault.team@gmail.com
+SMTP_APP_PASSWORD=abcd efgh ijkl mnop
+```
+
+**Option B: an email service** (Resend, Brevo, SendGrid, Mailgun, Postmark). Better inbox delivery, and emails can come from your own domain. Copy the SMTP settings from the provider:
+
+```
+SMTP_HOST=smtp.resend.com
+SMTP_PORT=587
+SMTP_USER=resend
+SMTP_PASS=<api key>
+SMTP_FROM=NoteVault <noreply@yourdomain.com>
+```
 
 ### Frontend environment variables
 

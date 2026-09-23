@@ -10,7 +10,9 @@ const router = express.Router();
 router.get('/:workspaceId', c.getWorkspaceProjects);
 router.post('/', validate(schemas.create), c.createProject);
 router.delete('/:projectId', c.deleteProject);
+router.get('/:projectId/members', c.getProjectMembers);
 router.post('/:projectId/members', validate(schemas.addMember), c.addProjectMember);
+router.delete('/:projectId/members/:userId', c.removeProjectMember);
 router.post('/:projectId/invite-link', c.generateInviteLink);
 router.post('/:projectId/invite-email', validate(schemas.inviteEmail), c.inviteByEmail);
 

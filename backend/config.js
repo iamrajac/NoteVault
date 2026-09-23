@@ -35,9 +35,15 @@ module.exports = {
   corsOrigins,
   // Set when running behind a reverse proxy / load balancer (Render, Railway, Nginx...) so rate limiting sees real client IPs.
   trustProxy: process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY : false,
+  // Any SMTP provider (Resend, Brevo, SendGrid, Mailgun...) via SMTP_HOST/SMTP_USER/SMTP_PASS,
+  // or Gmail via SMTP_EMAIL + SMTP_APP_PASSWORD.
   smtp: {
-    email: process.env.SMTP_EMAIL,
-    appPassword: process.env.SMTP_APP_PASSWORD,
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT) || 587,
+    secure: process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : Number(process.env.SMTP_PORT) === 465,
+    user: process.env.SMTP_USER || process.env.SMTP_EMAIL,
+    pass: process.env.SMTP_PASS || process.env.SMTP_APP_PASSWORD,
+    from: process.env.SMTP_FROM || process.env.SMTP_EMAIL || process.env.SMTP_USER,
   },
   enableCron: process.env.ENABLE_CRON !== 'false' && !isTest,
 };

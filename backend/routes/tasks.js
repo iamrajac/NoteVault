@@ -9,6 +9,8 @@ const router = express.Router();
 
 router.post('/', validate(schemas.create), c.createTask);
 router.patch('/:taskId/status', validate(schemas.updateStatus), c.updateTaskStatus);
+router.patch('/:taskId', validate(schemas.update), c.updateTask);
+router.delete('/:taskId', c.deleteTask);
 router.get('/:projectId', c.getTasks);
 
 module.exports = router;

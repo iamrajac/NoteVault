@@ -1,6 +1,6 @@
 const prisma = require('../utils/db');
-const { requireWorkspaceMember, requireProjectAccess, visibleProjectsWhere, MANAGER_ROLES } = require('../utils/access');
-const { badRequest, conflict } = require('../utils/errors');
+const { requireWorkspaceMember, requireProjectAccess, visibleProjectsWhere, MANAGER_ROLES, publicUserSelect } = require('../utils/access');
+const { badRequest, conflict, notFound } = require('../utils/errors');
 const { createInvitation, sendInviteEmail } = require('./auth');
 const { notify } = require('../utils/notify');
 
@@ -94,4 +94,24 @@ exports.inviteByEmail = async (req, res) => {
   });
 
   res.json({ message: sent ? 'Invitation email sent.' : 'Invitation created, but the email could not be sent.', link, emailSent: sent });
+};
+
+exports.getProjectMembers = async (req, res) => {
+  const { project } = await requireProjectAccess(req.user.id, req.params.projectId);
+  const members = await prisma.projectMember.findMany({
+    where: { projectId: project.id },
+    include: { user: { select: publicUserSelect } },
+    orderBy: { createdAt: 'asc' },
+  });
+  res.json(members);
+};
+
+// Managers remove someone from a project; their tasks in it become unassigned.
+exports.removeProjectMember = async (req, res) => {
+  const { project } = await requireProjectAccess(req.user.id, req.params.projectId, { managerOnly: true });
+  const { userId } = req.params;
+  const { count } = await prisma.projectMember.deleteMany({ where: { projectId: project.id, userId } });
+  if (count === 0) throw notFound('That person is not a member of this project.');
+  await prisma.taskAssignee.deleteMany({ where: { userId, task: { projectId: project.id } } });
+  res.status(204).end();
 };

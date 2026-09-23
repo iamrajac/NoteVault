@@ -30,6 +30,7 @@ router.get('/invitations/:token', loginLimiter, c.getInvitation);
 router.post('/register-invite', loginLimiter, validate(schemas.registerWithInvite), c.registerWithInvite);
 
 router.get('/me', requireAuth, c.me);
+router.patch('/me', requireAuth, validate(schemas.updateProfile), c.updateProfile);
 router.patch('/password', requireAuth, loginLimiter, validate(schemas.changePassword), c.changePassword);
 router.post('/invite', requireAuth, emailLimiter, validate(schemas.invite), c.inviteUser);
 router.post('/accept-invite', requireAuth, validate(schemas.acceptInvite), c.acceptInvite);

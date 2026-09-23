@@ -312,3 +312,88 @@ test('unknown routes and bad JSON get clean errors', async () => {
   await api.request().get('/api/does-not-exist').expect(404);
   await api.request().post('/api/auth/login').set('Content-Type', 'application/json').send('{bad').expect(400);
 });
+
+test('managers can edit and reassign tasks; employees cannot', async () => {
+  const { admin, employee, project } = await teamWithProject();
+  const task = (await admin.post('/api/tasks').send({ projectId: project.id, name: 'Draft', priority: 'Low' }).expect(201)).body;
+
+  await employee.patch(`/api/tasks/${task.id}`).send({ name: 'Hacked' }).expect(403);
+  const edited = (
+    await admin
+      .patch(`/api/tasks/${task.id}`)
+      .send({ name: 'Final', priority: 'High', difficulty: 4, dueDate: '2030-05-01', assigneeId: employee.user.id })
+      .expect(200)
+  ).body;
+  assert.equal(edited.name, 'Final');
+  assert.equal(edited.priority, 'High');
+  assert.equal(edited.assignees[0].userId, employee.user.id);
+  const inbox = (await employee.get(`/api/notifications/${admin.workspaceId}`)).body;
+  assert.ok(inbox.some((n) => n.title === 'New task assigned' && n.message.includes('Final')));
+
+  const unassigned = (await admin.patch(`/api/tasks/${task.id}`).send({ assigneeId: null }).expect(200)).body;
+  assert.equal(unassigned.assignees.length, 0);
+  await admin.patch(`/api/tasks/${task.id}`).send({ priority: 'Urgent' }).expect(400);
+});
+
+test('notes, tasks and milestones can be deleted by the right people', async () => {
+  const { admin, employee, project } = await teamWithProject();
+  const own = (await employee.post('/api/notes').send({ title: 'Mine', projectId: project.id })).body;
+  const others = (await admin.post('/api/notes').send({ title: 'Theirs', projectId: project.id })).body;
+  const task = (await admin.post('/api/tasks').send({ projectId: project.id, name: 'T' })).body;
+  const milestone = (await admin.post('/api/milestones').send({ name: 'M', projectId: project.id })).body;
+  await admin.post(`/api/milestones/${milestone.id}/items`).send({ targetId: task.id, targetType: 'task' }).expect(200);
+
+  await employee.delete(`/api/notes/${others.id}`).expect(403);
+  await employee.delete(`/api/notes/${own.id}`).expect(204);
+  await admin.delete(`/api/notes/${others.id}`).expect(204);
+  await admin.get(`/api/notes/${others.id}`).expect(404);
+
+  await employee.delete(`/api/tasks/${task.id}`).expect(403);
+  await employee.delete(`/api/milestones/${milestone.id}`).expect(403);
+  await admin.delete(`/api/milestones/${milestone.id}`).expect(204);
+  // The task survives its milestone being deleted.
+  const stillThere = (await admin.get(`/api/tasks/${project.id}`)).body.find((t) => t.id === task.id);
+  assert.equal(stillThere.milestoneId, null);
+  await admin.delete(`/api/tasks/${task.id}`).expect(204);
+});
+
+test('admins manage roles and members, and a workspace always keeps an Admin', async () => {
+  const { admin, employee, project } = await teamWithProject();
+  const ws = admin.workspaceId;
+  const task = (await admin.post('/api/tasks').send({ projectId: project.id, name: 'T', assigneeId: employee.user.id })).body;
+
+  await employee.patch(`/api/workspaces/${ws}/members/${employee.user.id}`).send({ role: 'Admin' }).expect(403);
+  await admin.patch(`/api/workspaces/${ws}/members/${admin.user.id}`).send({ role: 'Employee' }).expect(400);
+  await admin.delete(`/api/workspaces/${ws}/members/${admin.user.id}`).expect(400);
+
+  await admin.patch(`/api/workspaces/${ws}/members/${employee.user.id}`).send({ role: 'Team Lead' }).expect(200);
+  const inbox = (await employee.get(`/api/notifications/${ws}`)).body;
+  assert.ok(inbox.some((n) => n.title === 'Your role changed'));
+  await employee.post('/api/projects').send({ name: 'Now allowed', workspaceId: ws }).expect(201);
+
+  await admin.delete(`/api/workspaces/${ws}/members/${employee.user.id}`).expect(200);
+  await employee.get(`/api/projects/${ws}`).expect(404);
+  const after = (await admin.get(`/api/tasks/${project.id}`)).body.find((t) => t.id === task.id);
+  assert.equal(after.assignees.length, 0);
+});
+
+test('members can leave a workspace, and project members can be listed and removed', async () => {
+  const { admin, employee, project } = await teamWithProject();
+  const members = (await employee.get(`/api/projects/${project.id}/members`).expect(200)).body;
+  assert.deepEqual(members.map((m) => m.user.id).sort(), [admin.user.id, employee.user.id].sort());
+  assert.ok(!JSON.stringify(members).includes('password'));
+
+  await employee.delete(`/api/projects/${project.id}/members/${admin.user.id}`).expect(403);
+  await admin.delete(`/api/projects/${project.id}/members/${employee.user.id}`).expect(204);
+  await employee.get(`/api/tasks/${project.id}`).expect(404);
+
+  const left = (await employee.delete(`/api/workspaces/${admin.workspaceId}/members/${employee.user.id}`).expect(200)).body;
+  assert.ok(!left.user.workspaces.some((w) => w.workspaceId === admin.workspaceId));
+});
+
+test('users can change their display name', async () => {
+  const user = await api.register('renamer');
+  const res = await user.patch('/api/auth/me').send({ name: '  New Name  ' }).expect(200);
+  assert.equal(res.body.user.name, 'New Name');
+  await user.patch('/api/auth/me').send({ name: '' }).expect(400);
+});

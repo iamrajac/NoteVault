@@ -183,9 +183,18 @@ function attach(server) {
   });
 }
 
+// Called after a note is deleted: tell everyone who has it open, then drop the in-memory document.
+function noteDeleted(noteId) {
+  if (io) {
+    io.to(roomName(noteId)).emit('note-deleted', { noteId });
+    io.in(roomName(noteId)).socketsLeave(roomName(noteId));
+  }
+  closeRoom(noteId);
+}
+
 // Save everything on shutdown.
 async function flushAll() {
   await Promise.all([...rooms.keys()].map((id) => saveRoom(id).catch(() => {})));
 }
 
-module.exports = { attach, replaceContent, flushAll };
+module.exports = { attach, replaceContent, noteDeleted, flushAll };

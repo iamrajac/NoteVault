@@ -36,6 +36,20 @@ async function leastLoadedMember(projectId) {
   return best;
 }
 
+// Any workspace member can be assigned; they're added to the project so they can see the task.
+async function ensureAssignable(project, userId) {
+  const inWorkspace = await prisma.workspaceMember.findUnique({
+    where: { userId_workspaceId: { userId, workspaceId: project.workspaceId } },
+  });
+  if (!inWorkspace) throw badRequest('The assignee must be a member of this workspace.');
+  await prisma.projectMember.upsert({
+    where: { projectId_userId: { projectId: project.id, userId } },
+    create: { projectId: project.id, userId },
+    update: {},
+  });
+  return userId;
+}
+
 // Admins and Team Leads create tasks.
 exports.createTask = async (req, res) => {
   const { projectId, name, description, priority, difficulty, dueDate, noteId, assigneeId } = req.body;
@@ -50,17 +64,7 @@ exports.createTask = async (req, res) => {
   if (assigneeId === 'auto') {
     targetAssigneeId = await leastLoadedMember(projectId);
   } else if (assigneeId) {
-    // Any workspace member can be assigned; they're added to the project so they can see the task.
-    const inWorkspace = await prisma.workspaceMember.findUnique({
-      where: { userId_workspaceId: { userId: assigneeId, workspaceId: project.workspaceId } },
-    });
-    if (!inWorkspace) throw badRequest('The assignee must be a member of this workspace.');
-    await prisma.projectMember.upsert({
-      where: { projectId_userId: { projectId, userId: assigneeId } },
-      create: { projectId, userId: assigneeId },
-      update: {},
-    });
-    targetAssigneeId = assigneeId;
+    targetAssigneeId = await ensureAssignable(project, assigneeId);
   }
 
   const task = await prisma.task.create({
@@ -116,4 +120,45 @@ exports.getTasks = async (req, res) => {
   const { project } = await requireProjectAccess(req.user.id, req.params.projectId);
   const tasks = await prisma.task.findMany({ where: { projectId: project.id }, include: taskInclude, orderBy: { createdAt: 'asc' } });
   res.json(tasks);
+};
+
+// Managers edit a task's details and (re)assign it. `assigneeId: null` unassigns.
+exports.updateTask = async (req, res) => {
+  const { task, project } = await requireTaskAccess(req.user.id, req.params.taskId, { managerOnly: true });
+  const { name, description, priority, difficulty, dueDate, assigneeId } = req.body;
+
+  const data = {};
+  if (name !== undefined) data.name = name;
+  if (description !== undefined) data.description = description;
+  if (priority !== undefined) data.priority = priority;
+  if (difficulty !== undefined) data.difficulty = difficulty;
+  if (dueDate !== undefined) {
+    data.dueDate = dueDate;
+    data.reminderSentAt = null; // a new due date deserves a new reminder
+  }
+
+  let newAssignee;
+  if (assigneeId !== undefined) {
+    newAssignee = assigneeId ? await ensureAssignable(project, assigneeId) : null;
+    data.assignees = { deleteMany: {}, ...(newAssignee ? { create: { userId: newAssignee } } : {}) };
+  }
+
+  const updated = await prisma.task.update({ where: { id: task.id }, data, include: taskInclude });
+
+  if (newAssignee && !task.assignees.some((a) => a.userId === newAssignee)) {
+    await notify([newAssignee], {
+      workspaceId: project.workspaceId,
+      title: 'New task assigned',
+      message: `You were assigned "${updated.name}" in ${project.name}.`,
+      link: '/tasks',
+      excludeUserId: req.user.id,
+    });
+  }
+  res.json(updated);
+};
+
+exports.deleteTask = async (req, res) => {
+  const { task } = await requireTaskAccess(req.user.id, req.params.taskId, { managerOnly: true });
+  await prisma.task.delete({ where: { id: task.id } });
+  res.status(204).end();
 };

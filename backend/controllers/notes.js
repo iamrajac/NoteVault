@@ -252,3 +252,14 @@ exports.getNoteEditLogs = async (req, res) => {
   });
   res.json(logs);
 };
+
+// The author or a manager can delete a note. Anyone editing it live is told it's gone.
+exports.deleteNote = async (req, res) => {
+  const { note, role } = await requireNoteAccess(req.user.id, req.params.id);
+  if (note.authorId !== req.user.id && !isManager(role)) {
+    throw forbidden('Only the author or a Team Lead/Admin can delete this note.');
+  }
+  await prisma.note.delete({ where: { id: note.id } });
+  collab.noteDeleted(note.id);
+  res.status(204).end();
+};

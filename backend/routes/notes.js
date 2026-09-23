@@ -11,6 +11,7 @@ router.post('/', validate(schemas.create), c.createNote);
 router.get('/project/:projectId', c.getProjectNotes);
 router.get('/:id', c.getNoteById);
 router.patch('/:id', validate(schemas.update), c.updateNote);
+router.delete('/:id', c.deleteNote);
 router.patch('/:id/status', validate(schemas.updateStatus), c.updateNoteStatus);
 router.post('/:id/links', validate(schemas.link), c.linkNote);
 router.get('/:id/versions', c.getNoteVersions);

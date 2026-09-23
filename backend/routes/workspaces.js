@@ -11,6 +11,8 @@ router.post('/', validate(schemas.create), c.createWorkspace);
 router.patch('/:workspaceId', validate(schemas.update), c.updateWorkspace);
 router.delete('/:workspaceId', c.deleteWorkspace);
 router.get('/:workspaceId/members', c.getWorkspaceMembers);
+router.patch('/:workspaceId/members/:userId', validate(schemas.memberRole), c.updateMemberRole);
+router.delete('/:workspaceId/members/:userId', c.removeMember);
 router.get('/:workspaceId/graph', c.getKnowledgeGraph);
 router.get('/:workspaceId/changelog', c.getChangelog);
 router.post('/:workspaceId/changelog/annotations', validate(schemas.annotation), c.addChangelogAnnotation);

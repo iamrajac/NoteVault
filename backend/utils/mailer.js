@@ -1,14 +1,17 @@
 const nodemailer = require('nodemailer');
 const config = require('../config');
 
-const smtpConfigured = Boolean(config.smtp.email && config.smtp.appPassword);
+const { host, port, secure, user, pass, from } = config.smtp;
+const smtpConfigured = Boolean(user && pass && from);
 
-const transporter = smtpConfigured
-  ? nodemailer.createTransport({
-      service: 'gmail',
-      auth: { user: config.smtp.email, pass: config.smtp.appPassword },
-    })
-  : null;
+const transporter = !smtpConfigured
+  ? null
+  : host
+    ? nodemailer.createTransport({ host, port, secure, auth: { user, pass } })
+    : nodemailer.createTransport({ service: 'gmail', auth: { user, pass } });
+
+// "NoteVault <noreply@example.com>" unless SMTP_FROM already includes a display name.
+const fromHeader = from && from.includes('<') ? from : `"NoteVault" <${from}>`;
 
 // Escape user-supplied text before putting it in email HTML.
 const escapeHtml = (value) =>
@@ -37,13 +40,13 @@ exports.sendEmail = async ({ to, subject, text, html }) => {
       return false;
     }
     // Local development without SMTP: print the email so links can be copied from the terminal.
-    console.warn('[mail] SMTP_EMAIL / SMTP_APP_PASSWORD not set. Printing email instead of sending it.');
+    console.warn('[mail] SMTP is not configured (see backend/.env.example). Printing email instead of sending it.');
     console.log(`\n--- EMAIL ---\nTo: ${to}\nSubject: ${subject}\n\n${text}\n-------------\n`);
     return true;
   }
 
   try {
-    await transporter.sendMail({ from: `"NoteVault" <${config.smtp.email}>`, to, subject, text, html });
+    await transporter.sendMail({ from: fromHeader, to, subject, text, html });
     return true;
   } catch (error) {
     console.error('[mail] Delivery error:', error.message);

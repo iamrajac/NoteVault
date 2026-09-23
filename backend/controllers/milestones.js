@@ -67,3 +67,10 @@ exports.linkItem = async (req, res) => {
   await model.update({ where: { id: targetId }, data: { milestoneId: milestone.id } });
   res.json({ success: true });
 };
+
+// Deleting a milestone keeps its tasks and notes; they're just no longer attached to it.
+exports.deleteMilestone = async (req, res) => {
+  const { milestone } = await requireMilestoneAccess(req.user.id, req.params.id, { managerOnly: true });
+  await prisma.milestone.delete({ where: { id: milestone.id } });
+  res.status(204).end();
+};

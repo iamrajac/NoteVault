@@ -1,6 +1,8 @@
 const prisma = require('../utils/db');
 const { requireWorkspaceMember, visibleProjectsWhere, publicUserSelect } = require('../utils/access');
 const { sessionUser } = require('./auth');
+const { badRequest, notFound } = require('../utils/errors');
+const { notify } = require('../utils/notify');
 
 exports.createWorkspace = async (req, res) => {
   const workspace = await prisma.workspace.create({
@@ -153,4 +155,65 @@ exports.globalSearch = async (req, res) => {
   ]);
 
   res.json({ notes, tasks, milestones });
+};
+
+async function findMember(workspaceId, userId) {
+  const member = await prisma.workspaceMember.findUnique({ where: { userId_workspaceId: { userId, workspaceId } } });
+  if (!member) throw notFound('That person is not a member of this workspace.');
+  return member;
+}
+
+// A workspace must always keep at least one Admin.
+async function assertNotLastAdmin(workspaceId, member, message) {
+  if (member.role !== 'Admin') return;
+  const admins = await prisma.workspaceMember.count({ where: { workspaceId, role: 'Admin' } });
+  if (admins <= 1) throw badRequest(message);
+}
+
+exports.updateMemberRole = async (req, res) => {
+  const { workspaceId, userId } = req.params;
+  await requireWorkspaceMember(req.user.id, workspaceId, ['Admin']);
+  const member = await findMember(workspaceId, userId);
+  const { role } = req.body;
+
+  if (role !== 'Admin') await assertNotLastAdmin(workspaceId, member, 'A workspace needs at least one Admin. Make someone else Admin first.');
+  const updated = await prisma.workspaceMember.update({
+    where: { id: member.id },
+    data: { role },
+    include: { user: { select: publicUserSelect } },
+  });
+
+  if (member.role !== role) {
+    const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId }, select: { name: true } });
+    await notify([userId], {
+      workspaceId,
+      title: 'Your role changed',
+      message: `You are now ${role} in ${workspace.name}.`,
+      link: '/dashboard',
+      excludeUserId: req.user.id,
+    });
+  }
+  res.json(updated);
+};
+
+// Admins remove anyone; any member can remove themselves (leave).
+exports.removeMember = async (req, res) => {
+  const { workspaceId, userId } = req.params;
+  const leaving = userId === req.user.id;
+  await requireWorkspaceMember(req.user.id, workspaceId, leaving ? undefined : ['Admin']);
+  const member = await findMember(workspaceId, userId);
+  await assertNotLastAdmin(
+    workspaceId,
+    member,
+    leaving ? 'You are the only Admin. Make someone else Admin before leaving, or delete the workspace.' : 'You cannot remove the only Admin.'
+  );
+
+  // Also drop their project memberships and task assignments in this workspace.
+  await prisma.$transaction([
+    prisma.taskAssignee.deleteMany({ where: { userId, task: { project: { workspaceId } } } }),
+    prisma.projectMember.deleteMany({ where: { userId, project: { workspaceId } } }),
+    prisma.workspaceMember.delete({ where: { id: member.id } }),
+  ]);
+
+  res.json(leaving ? { user: await sessionUser(req.user.id) } : { success: true });
 };

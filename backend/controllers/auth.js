@@ -76,6 +76,11 @@ exports.me = async (req, res) => {
   res.json({ user: await sessionUser(req.user.id) });
 };
 
+exports.updateProfile = async (req, res) => {
+  await prisma.user.update({ where: { id: req.user.id }, data: { name: req.body.name } });
+  res.json({ user: await sessionUser(req.user.id) });
+};
+
 exports.forgotPassword = async (req, res) => {
   const { email } = req.body;
   const genericResponse = { message: 'If an account exists for this email, a password reset link has been sent.' };

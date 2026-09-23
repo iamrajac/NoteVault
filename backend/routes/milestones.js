@@ -11,6 +11,7 @@ router.post('/', validate(schemas.create), c.createMilestone);
 router.get('/project/:projectId', c.getProjectMilestones);
 router.get('/workspace/:workspaceId', c.getWorkspaceMilestones);
 router.patch('/:id/status', validate(schemas.updateStatus), c.updateMilestoneStatus);
+router.delete('/:id', c.deleteMilestone);
 router.get('/:id/items', c.getMilestoneItems);
 router.post('/:id/items', validate(schemas.linkItem), c.linkItem);
 
