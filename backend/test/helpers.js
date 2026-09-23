@@ -8,8 +8,22 @@ const path = require('node:path');
 const { createDB } = require('mysql-memory-server');
 
 async function setupTestApp() {
-  const db = await createDB({ version: '8.4.x', dbName: 'notevault_test', logLevel: 'ERROR' });
-  process.env.DATABASE_URL = `mysql://${db.username}@127.0.0.1:${db.port}/${db.dbName}`;
+  // CI provides a MySQL service via TEST_DATABASE_URL; locally a throwaway server is started.
+  // Each test file gets a fresh, empty database.
+  let db = null;
+  if (process.env.TEST_DATABASE_URL) {
+    const url = new URL(process.env.TEST_DATABASE_URL);
+    url.pathname = `/notevault_test_${path.basename(require.main?.filename || 'run', '.js').replace(/\W/g, '_')}_${process.pid}`;
+    process.env.DATABASE_URL = url.toString();
+    execFileSync(path.join(__dirname, '..', 'node_modules', '.bin', 'prisma'), ['migrate', 'reset', '--force', '--skip-generate', '--skip-seed'], {
+      cwd: path.join(__dirname, '..'),
+      env: process.env,
+      stdio: 'pipe',
+    });
+  } else {
+    db = await createDB({ version: '8.4.x', dbName: 'notevault_test', logLevel: 'ERROR' });
+    process.env.DATABASE_URL = `mysql://${db.username}@127.0.0.1:${db.port}/${db.dbName}`;
+  }
 
   execFileSync(path.join(__dirname, '..', 'node_modules', '.bin', 'prisma'), ['migrate', 'deploy'], {
     cwd: path.join(__dirname, '..'),
@@ -54,7 +68,7 @@ async function setupTestApp() {
 
   async function teardown() {
     await prisma.$disconnect();
-    await db.stop();
+    if (db) await db.stop();
   }
 
   return { api, teardown };
